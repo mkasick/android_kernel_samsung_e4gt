@@ -716,6 +716,10 @@ void __init setup_arch(char **cmdline_p)
 
 	parse_early_param();
 
+	/* Fixup memory after atags and command line is parsed. */
+	if (mdesc->fixmem)
+		mdesc->fixmem(&meminfo);
+
 	paging_init(mdesc);
 	request_standard_resources(&meminfo, mdesc);
 

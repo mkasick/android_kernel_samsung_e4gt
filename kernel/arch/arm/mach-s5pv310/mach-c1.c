@@ -47,7 +47,6 @@
 #ifdef CONFIG_ANDROID_PMEM
 #include <linux/android_pmem.h>
 #endif
-#include <linux/bootmem.h>
 
 #include <asm/pmu.h>
 #include <asm/mach/arch.h>
@@ -5799,28 +5798,12 @@ static struct platform_device ram_console_device = {
 	.resource = ram_console_resource,
 };
 
-static void __init setup_ram_console_mem(char *str)
+static void __init setup_ram_console_mem(resource_size_t start,
+                                         resource_size_t size)
 {
-	unsigned size = memparse(str, &str);
-	unsigned long flags;
-
-	if (size && (*str == '@')) {
-		unsigned long long base = 0;
-
-		base = simple_strtoul(++str, &str, 0);
-		if (reserve_bootmem(base, size, BOOTMEM_EXCLUSIVE)) {
-			pr_err("%s: failed reserving size %d "
-			       "at base 0x%llx\n", __func__, size, base);
-			return;
-		}
-
-		ram_console_resource[0].start = base;
-		ram_console_resource[0].end = base + size - 1;
-		pr_err("%s: %x at %x\n", __func__, size, base);
-	}
+	ram_console_resource[0].start = start;
+	ram_console_resource[0].end   = start+size-1;
 }
-
-__setup("ram_console=", setup_ram_console_mem);
 #endif
 
 #ifdef CONFIG_ANDROID_PMEM
@@ -7296,6 +7279,24 @@ static void __init sromc_setup(void)
 	__raw_writel(0x22222222, (S5P_VA_GPIO + 0x1e0));
 }
 
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+static void __init c1_fixmem(struct meminfo *mi)
+{
+	const unsigned long RESERVE_SIZE = SZ_1M;
+	struct membank *mb = &mi->bank[mi->nr_banks-1];
+
+	if (mb->size < RESERVE_SIZE) {
+		pr_err("%s: Not enough memory in last bank for ram_console.", __func__);
+		return;
+	}
+
+	mb->size -= RESERVE_SIZE;
+
+	/* Exclude the last 4 kB to preserve the kexec hardboot page. */
+	setup_ram_console_mem(mb->start+mb->size, RESERVE_SIZE-SZ_4K);
+}
+#endif
+
 #if defined(CONFIG_S5P_MEM_CMA)
 static void __init s5pv310_reserve(void);
 #endif
@@ -8116,6 +8117,9 @@ MACHINE_START(C1, "SMDKC210")
 	.io_pg_offst	= (((u32)S3C_VA_UART) >> 18) & 0xfffc,
 	.boot_params	= S5P_PA_SDRAM + 0x100,
 	.init_irq	= s5pv310_init_irq,
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+	.fixmem		= c1_fixmem,
+#endif
 	.map_io		= smdkc210_map_io,
 	.init_machine	= smdkc210_machine_init,
 	.timer		= &s5pv310_timer,
