@@ -280,9 +280,8 @@ static int __init s5pv310_core_init(void)
 
 core_initcall(s5pv310_core_init);
 
-static void s5pv310_sw_reset(void)
+void s5pv310_settle_movinand(void)
 {
-	int count = 3;
 	/*
 	 * Workaround for MoviNAND settle down time issue:
 	 * output/low for eMMC_EN and input/pull-none for others
@@ -295,6 +294,13 @@ static void s5pv310_sw_reset(void)
 	__raw_writel(0, S5PV310_VA_GPIO2 + 0x64);
 	__raw_writel(0, S5PV310_VA_GPIO2 + 0x68);
 	mdelay(400);
+}
+
+static void s5pv310_sw_reset(void)
+{
+	int count = 3;
+
+	s5pv310_settle_movinand();
 
 	while (count--) {
 		__raw_writel(0x0, S5P_INFORM1);
