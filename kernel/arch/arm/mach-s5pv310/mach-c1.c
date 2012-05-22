@@ -155,6 +155,10 @@ static struct wacom_g5_callbacks *wacom_callbacks;
 #include <linux/stmpe1601-keypad.h>
 #endif
 
+#ifdef CONFIG_KEXEC_HARDBOOT
+#include <asm/kexec.h>
+#endif
+
 #include "c1.h"
 
 extern struct sys_timer s5pv310_timer;
@@ -7466,6 +7470,22 @@ static void c1_reboot(char str, const char *cmd)
 	;
 }
 
+#ifdef CONFIG_KEXEC_HARDBOOT
+void c1_kexec_hardboot(void)
+{
+	/* Show gaudi_bootimg.jpg on reboot instead of charging.jpg when USB is
+	 * connected. */
+	writel(0x12345678, S5P_INFORM2);
+
+	/* Reboot with boot kernel, although probably doesn't matter on e4gt. */
+	writel(REBOOT_PREFIX|REBOOT_MODE_NONE, S5P_INFORM3);
+
+	/* Normally this is done right before reboot (s5pv310_sw_reset), but should
+	 * be fine here since MoviNAND is no longer accessed at this point. */
+	s5pv310_settle_movinand();
+}
+#endif
+
 
 #ifdef CONFIG_MACH_C1_NA_SPR_EPIC2_REV00
 int __init  stmpe1601_init(void)
@@ -7657,6 +7677,9 @@ static void __init smdkc210_machine_init(void)
 	/* to support system shut down */
 	pm_power_off = smdkc210_power_off;
 	arm_pm_restart = c1_reboot;
+#ifdef CONFIG_KEXEC_HARDBOOT
+	kexec_hardboot_hook = c1_kexec_hardboot;
+#endif
 
 	/* initialise the gpios */
 	c1_config_gpio_table();

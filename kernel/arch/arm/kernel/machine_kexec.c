@@ -23,6 +23,11 @@ extern unsigned long kexec_indirection_page;
 extern unsigned long kexec_mach_type;
 extern unsigned long kexec_boot_atags;
 
+#ifdef CONFIG_KEXEC_HARDBOOT
+extern unsigned long kexec_hardboot;
+void (*kexec_hardboot_hook)(void);
+#endif
+
 /*
  * Provide a dummy crash_notes definition while crash dump arrives to arm.
  * This prevents breakage of crash_notes attribute in kernel/ksysfs.c.
@@ -64,6 +69,10 @@ void machine_kexec(struct kimage *image)
 	kexec_indirection_page = page_list;
 	kexec_mach_type = machine_arch_type;
 	kexec_boot_atags = image->start - KEXEC_ARM_ZIMAGE_OFFSET + KEXEC_ARM_ATAGS_OFFSET;
+#ifdef CONFIG_KEXEC_HARDBOOT
+	kexec_hardboot = image->hardboot;
+#endif
+
 
 	/* copy our kernel relocation code to the control code page */
 	memcpy(reboot_code_buffer,
@@ -78,6 +87,12 @@ void machine_kexec(struct kimage *image)
 	local_fiq_disable();
 
 	setup_mm_for_reboot(0); /* mode is not used, so just pass 0*/
+
+#ifdef CONFIG_KEXEC_HARDBOOT
+	if (image->hardboot && kexec_hardboot_hook)
+		/* Run any final machine-specific shutdown code. */
+		kexec_hardboot_hook();
+#endif
 
 #ifdef CONFIG_ARCH_S5PV310
 	/* Must flush the outer cache for the relocation code to appear at its
