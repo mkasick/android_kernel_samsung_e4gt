@@ -74,7 +74,26 @@ void machine_kexec(struct kimage *image)
 			   (unsigned long) reboot_code_buffer + KEXEC_CONTROL_PAGE_SIZE);
 	printk(KERN_INFO "Bye!\n");
 
-	cpu_proc_fin();
+	local_irq_disable();
+	local_fiq_disable();
+
 	setup_mm_for_reboot(0); /* mode is not used, so just pass 0*/
-	cpu_reset(reboot_code_buffer_phys);
+
+#ifdef CONFIG_ARCH_S5PV310
+	/* Must flush the outer cache for the relocation code to appear at its
+	 * physical address, otherwise jumping to reboot_code_buffer_phys fails.
+	 * Note: Calling flush_cache_all() after cpu_proc_fin() causes a CPU
+	 * hang, as does calling outer_disable() and outer_inv_all(). */
+	flush_cache_all();
+	outer_flush_all();
+	cpu_proc_fin();
+#else
+	flush_cache_all();
+	cpu_proc_fin();
+	flush_cache_all();
+#endif
+
+	/* Must call cpu_reset via physical address since ARMv7 (& v6) stalls the
+	 * pipeline after disabling the MMU. */
+	((typeof(cpu_reset) *)virt_to_phys(cpu_reset))(reboot_code_buffer_phys);
 }
