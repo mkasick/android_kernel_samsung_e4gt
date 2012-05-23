@@ -1,0 +1,44 @@
+To build source-based kernel:
+
+1. Set CROSS_COMPILE to an appropriate path prefix, e.g.,
+
+   export CROSS_COMPILE=../../cm/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
+
+2. Build kernel and modules:
+
+   cd kernel; make c1_rev05_na_spr_defconfig && make -j 4 &&
+      make INSTALL_MOD_PATH=.. INSTALL_MOD_STRIP=1 modules_install; cd ..
+
+3. Copy newly-built modules to initramfs:
+
+   find lib/modules -name '*.ko' -exec cp -a {} initramfs/lib/modules \;
+
+4. Rebuild final zImage with updated initramfs:
+
+   cd kernel; make zImage; cd ..
+
+The completed kernel is located at kernel/arch/arm/boot/zImage.
+
+
+To make a prebuilt kernel kexec-able:
+
+1. Set CROSS_COMPILE to an appropriate path prefix, e.g.,
+
+   export CROSS_COMPILE=../../cm/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
+
+2. Build kernel (which won't be used):
+
+   cd kernel; make c1_rev05_na_spr_defconfig && make -j 4 && cd ..
+
+3. Copy prebuilt kernel (zImage) to current directory.
+
+4. Extract prebuilt kernel Image:
+
+   skip=`grep -Fabom 1 $'\x1f\x8b\x08' zImage | head -n 1 | cut -d : -f 1`
+   dd if=zImage bs=1 skip="$skip" | gunzip > kernel/arch/arm/boot/Image
+
+5. Rebuild final zImage with prebuilt Image:
+
+   cd kernel; make zImage; cd ..
+
+The kexec-able kernel is located at kernel/arch/arm/boot/zImage.
