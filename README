@@ -1,0 +1,24 @@
+To build source-based kernel:
+
+1. Set CROSS_COMPILE to an appropriate path prefix, e.g.,
+
+   export CROSS_COMPILE=../../cm/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
+
+2. Build kernel and modules:
+
+   cd kernel; make u1_na_spr_defconfig && make -j 4 &&
+      make INSTALL_MOD_PATH=.. INSTALL_MOD_STRIP=1 modules_install; cd ..
+
+3. Copy newly-built modules to initramfs:
+
+   find lib/modules -name '*.ko' -exec cp -a {} initramfs/lib/modules \;
+
+4. Remove .empty files from initramfs:
+
+   find initramfs -name '.empty' -exec rm {} +
+
+5. Rebuild final zImage with updated initramfs:
+
+   cd kernel; make zImage; cd ..
+
+The completed kernel is located at kernel/arch/arm/boot/zImage.
