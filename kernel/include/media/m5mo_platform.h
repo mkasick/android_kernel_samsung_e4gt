@@ -1,6 +1,6 @@
 /*
  * Driver for M5MO (5MP camera) from NEC
- *
+ * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -18,8 +18,6 @@ struct m5mo_platform_data {
 
 	/* ISP interrupt */
 	int (*config_isp_irq)(void);
-#if defined(CONFIG_TARGET_LOCALE_NAATT)
-	void (*set_recording_state)(bool);
-#endif
+	int irq;
 };
 

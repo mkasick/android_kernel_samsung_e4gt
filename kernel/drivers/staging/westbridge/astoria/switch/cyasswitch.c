@@ -18,7 +18,6 @@
 ## Boston, MA  02110-1301, USA.
 ## ===========================
 */
-
 #include <linux/fs.h>
 #include <linux/ioport.h>
 #include <linux/timer.h>
@@ -43,7 +42,7 @@
 
 extern int cy_as_diagnostics(cy_as_diag_cmd_type mode, char *result);
 
-static int mode = 0;
+static int mode;
 module_param(mode, int, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(mode, "firmware number, change switch=0, UMS=1");
 
@@ -56,8 +55,7 @@ static int __init cy_as_switch_init (void)
 	cyasswitch_buf = (uint8_t *)cy_as_hal_alloc(4096);
 	cy_as_hal_mem_set(cyasswitch_buf, 0, 4096);
 
-	switch( mode )
-	{
+		switch (mode) {
 		case 1:
 			retVal = cy_as_diagnostics(CY_AS_DIAG_GET_VERSION, cyasswitch_buf);
 			if( retVal )
@@ -75,8 +73,7 @@ static int __init cy_as_switch_init (void)
 				else
 					cy_as_hal_print_message("<1>CyAsSwitch: CY_AS_DIAG_SD_MOUNT - %s\n", cyasswitch_buf) ;
 
-				for(i=0 ; i<4 ; i++ )
-				{
+				for (i = 0 ; i < 4 ; i++) {
 					retVal = cy_as_diagnostics(CY_AS_DIAG_SD_WRITE, cyasswitch_buf);
 					if( retVal )
 						cy_as_hal_print_message("<1>CyAsSwitch: CY_AS_DIAG_SD_MOUNT failed.\n") ;
@@ -85,8 +82,7 @@ static int __init cy_as_switch_init (void)
 
 				}
 			
-				for(i=0 ; i<32 ; i++ )
-				{
+				for (i = 0 ; i < 32 ; i++) {
 					retVal = cy_as_diagnostics(CY_AS_DIAG_SD_READ, cyasswitch_buf);
 					if( retVal )
 						cy_as_hal_print_message("<1>CyAsSwitch: CY_AS_DIAG_SD_MOUNT failed.\n") ;
@@ -140,8 +136,7 @@ static void __exit cy_as_switch_cleanup (void)
 {
 	uint32_t retVal = 0 ;
 
-	switch( mode )
-	{
+		switch (mode) {
 		case 10:
 			retVal = cy_as_diagnostics(CY_AS_DIAG_SD_UNMOUNT, cyasswitch_buf);
 			if( retVal )

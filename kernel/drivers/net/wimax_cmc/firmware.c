@@ -9,6 +9,8 @@
 #define SEEK_SET	0
 #define SEEK_CUR	1
 #define SEEK_END	2
+#define WIMAX_BAT_SYSPATH \
+	"/sys/devices/platform/sec-battery/power_supply/battery/wimax"
 
 /******************************************************************************
  *                           Library Functions
@@ -170,7 +172,7 @@ int klib_fgetc(
  * \return	.
  *************************************************************************/
 int klib_flength(
-		struct file *filp 	/*!< file pointer */
+		struct file *filp	/*!< file pointer */
 		)
 {
 	int total_len = 0;
@@ -221,4 +223,18 @@ int klib_fwrite(
 	set_fs(oldfs);
 
 	return writelen;
+}
+
+void s3c_bat_use_wimax(int onoff)
+{
+	struct file     *fp;
+	fp = klib_fopen(WIMAX_BAT_SYSPATH, O_RDWR, 0);
+
+	if (!fp)
+		pr_err("open fail");
+    if (onoff)
+			klib_fwrite("1", 1, fp);
+	else
+		klib_fwrite("0", 1, fp);
+		klib_fclose(fp);
 }

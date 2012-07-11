@@ -46,7 +46,7 @@
  * #include <linux/westbridge/cyasdma.h>
  * #include <linux/westbridge/cyasintr.h>
  */
-//#include <mach/mux.h>
+/* #include <mach/mux.h> */
 #include <mach/gpio.h>
 #include <mach/dma.h>
 #include <linux/dma-mapping.h>
@@ -72,13 +72,13 @@
 /*
  * debug prints enabling
  */
-//#define DBGPRN_ENABLED
-//#define DBGPRN_DMA_SETUP_RD
-//#define DBGPRN_DMA_SETUP_WR
+/* #define DBGPRN_ENABLED
+   #define DBGPRN_DMA_SETUP_RD
+   #define DBGPRN_DMA_SETUP_WR */
  
 
-//#define CHECK_MULTI_ACCESS 
-//#define EP_SPIN_LOCK
+/*#define CHECK_MULTI_ACCESS */
+/*#define EP_SPIN_LOCK */
 
 /*
  * For performance reasons, we handle storage endpoint transfers upto 4 KB
@@ -101,13 +101,13 @@
 #define is_storage_e_p(ep) (((ep) == 2) || ((ep) == 4) || \
 				((ep) == 6) || ((ep) == 8))
 
-#ifdef CONFIG_MACH_C1_NA_SPR_REV05
-#define CYASHAL_PNAND_CONFIG_SET 0x180130e
-#define CYASHAL_PNAND_CONFIG_WRITE_SET 0x180010e
-#else
-#define CYASHAL_PNAND_CONFIG_SET 0x180140e
-#define CYASHAL_PNAND_CONFIG_WRITE_SET 0x180011e
-#endif
+/* define for Gaudi */
+#define	CYASHAL_PNAND_CONFIG_SET 0x180130e
+#define	CYASHAL_PNAND_CONFIG_WRITE_SET 0x180010e
+
+/* define for EPIC2 */
+/*#define	CYASHAL_PNAND_CONFIG_SET 0x180140e */
+/*#define	CYASHAL_PNAND_CONFIG_WRITE_SET 0x180011e */
 
 /*
  * keep processing new WB DRQ in ISR untill all handled (performance feature)
@@ -214,13 +214,13 @@ static uint16_t intr_sequence_num;
 static uint8_t intr__enable;
 spinlock_t int_lock ;
 
-static void *iomux_vma;
+static u32 iomux_vma;
 
 
 bool have_irq;
 
 #ifdef CHECK_MULTI_ACCESS    
-static atomic_t gl_usage_cnt = { 0 };    //throw an error if called from multiple threads!!!
+static atomic_t gl_usage_cnt = { 0 } ;     /* throw an error if called from multiple threads!!! */
 #endif
 
 /**
@@ -245,27 +245,37 @@ static atomic_t gl_usage_cnt = { 0 };    //throw an error if called from multipl
 
 #define CYAS_PNAND_STATUS_READ	0x70
 
+
+int	f_debug_flag;
+int	f_debug_count;
+
+void cy_as_hal_set_debug(int flag)
+{
+	f_debug_flag = flag;
+}
+
+
 #ifdef  __CYAS_HAL_USE_DMA__
 void cy_as_hal_dma_txcb(struct s3c2410_dma_chan *chan, void *buf_id,
 				int size, enum s3c2410_dma_buffresult res)
 {
-	//struct cy_as_hal_driver_data *cyashal_work = buf_id;
+	/* struct cy_as_hal_driver_data *cyashal_work = buf_id;  */
 	unsigned long flags;
 
-	//printk(KERN_ERR"cy_as_hal_dma_txcb\n");
+	/* printk (KERN_ERR"cy_as_hal_dma_txcb\n");  */
 	spin_lock_irqsave(&cyashal_work->lock, flags);
 
-//	if (res == S3C2410_RES_OK)
+/*	if  (res == S3C2410_RES_OK) */
 		cyashal_work->state &= ~TXBUSY;
 
 	/* If the other done */
-//	if (!(cyashal_work->state & RXBUSY))
-	//	complete(&cyashal_work->xfer_completion);
+/*	if  (! (cyashal_work->state & RXBUSY))
+		complete (&cyashal_work->xfer_completion);  */
 
 	spin_unlock_irqrestore(&cyashal_work->lock, flags);
 }
 
-uint16_t		  g_cyashal_mask_val = 0 ;
+uint16_t		  g_cyashal_mask_val;
 
 static void cyashal_workqueue(struct work_struct *work)
 {
@@ -286,8 +296,8 @@ static void cyashal_workqueue(struct work_struct *work)
 	dev_p = m_c110_list_p;
 	read_val = cy_as_hal_read_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_P0_INTR_REG) ;
 
-	//g_cyashal_mask_val = cy_as_hal_read_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_P0_INT_MASK_REG) ;
-	//cy_as_hal_write_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_P0_INT_MASK_REG, 0x0000) ;
+	/* g_cyashal_mask_val = cy_as_hal_read_register ((cy_as_hal_device_tag)dev_p,  CY_AS_MEM_P0_INT_MASK_REG) ;
+	cy_as_hal_write_register ((cy_as_hal_device_tag)dev_p,  CY_AS_MEM_P0_INT_MASK_REG,  0x0000) ;  */
 	if (read_val & CY_AS_MEM_P0_INTR_REG_DRQINT) {
 
 		do {
@@ -307,11 +317,17 @@ static void cyashal_workqueue(struct work_struct *work)
 	if (read_val & sentinel)
 		cy_as_intr_service_interrupt((cy_as_hal_device_tag)dev_p) ;
 
-#ifdef DBGPRN_ENABLED
+#if 1 /* def DBGPRN_ENABLED */
+	if (f_debug_flag) {
 	DBGPRN("<1>_hal:_intr__exit seq:%d, mask=%4.4x,int_pin:%d DRQ_jobs:%d\n", intr_sequence_num, g_cyashal_mask_val, irq_pin, drq_loop_cnt);
+		if (++f_debug_count > 10) {
+			f_debug_count = 0;
+			f_debug_flag = 0;
+		}
+	}
 #endif
-	//cy_as_hal_write_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_P0_INT_MASK_REG, g_cyashal_mask_val) ;
-        //enable_irq(WB_CYAS_IRQ_INT);
+	/* cy_as_hal_write_register ((cy_as_hal_device_tag)dev_p,  CY_AS_MEM_P0_INT_MASK_REG,  g_cyashal_mask_val) ;
+	enable_irq (WB_CYAS_IRQ_INT);  */
 }
 #endif
 /*
@@ -324,14 +340,14 @@ static irqreturn_t cy_astoria_int_handler(int irq,
 
 #ifdef  __CYAS_HAL_USE_DMA__
 	dev_p = dev_id;
-	//g_cyashal_mask_val = cy_as_hal_read_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_P0_INT_MASK_REG) ;
-	//cy_as_hal_write_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_P0_INT_MASK_REG, 0x0000) ;
-        //disable_irq(WB_CYAS_IRQ_INT);
+	/*g_cyashal_mask_val = cy_as_hal_read_register ((cy_as_hal_device_tag)dev_p,  CY_AS_MEM_P0_INT_MASK_REG) ;
+	cy_as_hal_write_register ((cy_as_hal_device_tag)dev_p,  CY_AS_MEM_P0_INT_MASK_REG,  0x0000) ;
+	disable_irq (WB_CYAS_IRQ_INT);  */
 #ifdef DBGPRN_ENABLED
 	DBGPRN("<1>%s: call work queue \n",__func__);
 #endif
 	queue_work(cyashal_work->workqueue, &cyashal_work->work);
-#else //__CYAS_HAL_USE_DMA__
+#else /*__CYAS_HAL_USE_DMA__ */
 	uint16_t		  read_val = 0 ;
 	uint16_t		  mask_val = 0 ;
 
@@ -435,21 +451,21 @@ static int cy_as_hal_configure_interrupts(void *dev_p)
 	int irq_pin  = WB_CYAS_INT;
 
 #ifdef  __CYAS_HAL_USE_DMA__
-	//cy_as_c110_dev_kernel *tag = (cy_as_c110_dev_kernel *)dev_p;
+	cy_as_c110_dev_kernel *tag = (cy_as_c110_dev_kernel *)dev_p;
 	cyashal_work = (cy_as_hal_driver_data *)kmalloc(sizeof( cy_as_hal_driver_data), GFP_KERNEL);
 	cyashal_work->workqueue = create_singlethread_workqueue("cyashal_wq");
-	if( cyashal_work )
-	{
+	if (cyashal_work) {
 		INIT_WORK( &cyashal_work->work, cyashal_workqueue );
 	}
-	cyashal_work->tx_dmach = DMACH_SPI0_RX; //DMACH_UART0_RX; //DMACH_MTOM_0;
+	cyashal_work->tx_dmach = DMACH_SPI0_RX;  /*DMACH_UART0_RX;  */ /* DMACH_MTOM_0;  */
 
 
 	spin_lock_init(&cyashal_work->lock);
 	init_completion(&cyashal_work->xfer_completion);
 
 	#if 0
-	if (result=s3c2410_dma_request(cyashal_work->tx_dmach, &cy_as_hal_dma_client, NULL) < 0) {
+	result = s3c2410_dma_request (cyashal_work->tx_dmach,  &cy_as_hal_dma_client,  NULL);
+	if  (result < 0) {
 		cy_as_hal_print_message(KERN_ERR"%s : s3c2410_dma_request error\n", __func__);
 		s3c2410_dma_free(cyashal_work->tx_dmach, &cy_as_hal_dma_client);
 		return 0;
@@ -457,25 +473,28 @@ static int cy_as_hal_configure_interrupts(void *dev_p)
 	cy_as_hal_print_message(KERN_ERR"%s : s3c2410_dma_request: %d\n", __func__,result);
 	result=s3c2410_dma_set_buffdone_fn(cyashal_work->tx_dmach, cy_as_hal_dma_txcb);
 	cy_as_hal_print_message(KERN_ERR"%s : s3c2410_dma_set_buffdone_fn: %d\n", __func__,result);
-	//result=s3c2410_dma_devconfig(cyashal_work->tx_dmach, S3C_DMA_MEM2MEM_P,
-	//					tag->m_phy_addr_base + NFDATA);
-	//cy_as_hal_print_message(KERN_ERR"%s : s3c2410_dma_devconfig: %d\n", __func__,result);
+	/*result = s3c2410_dma_devconfig (cyashal_work->tx_dmach,  S3C_DMA_MEM2MEM_P,
+						tag->m_phy_addr_base + NFDATA);  */
+	/*cy_as_hal_print_message (KERN_ERR"%s : s3c2410_dma_devconfig: %d\n",  __func__, result);  */
 	result=s3c2410_dma_config(cyashal_work->tx_dmach,16);
 	cy_as_hal_print_message(KERN_ERR"%s : s3c2410_dma_config: %d\n", __func__,result);
 	result=s3c2410_dma_setflags(cyashal_work->tx_dmach,S3C2410_DMAF_AUTOSTART);
 	cy_as_hal_print_message(KERN_ERR"%s : s3c2410_dma_setflags: %d\n", __func__,result);
 	#endif
-	set_irq_type(WB_CYAS_IRQ_INT, IRQ_TYPE_EDGE_FALLING);
-	result = request_irq(WB_CYAS_IRQ_INT,	(irq_handler_t)cy_astoria_int_handler, IRQF_SHARED, "AST_INT#", dev_p);
-#else
-	set_irq_type(WB_CYAS_IRQ_INT, IRQ_TYPE_LEVEL_LOW);
-	result = request_irq(WB_CYAS_IRQ_INT,	(irq_handler_t)cy_astoria_int_handler, IRQF_DISABLED, "AST_INT#", dev_p);
-#endif
-
+	irq_set_irq_type(WB_CYAS_IRQ_INT, IRQ_TYPE_EDGE_FALLING);
 	/*
 	 * for shared IRQS must provide non NULL device ptr
 	 * othervise the int won't register
 	 * */
+	result = request_irq(WB_CYAS_IRQ_INT,	(irq_handler_t)cy_astoria_int_handler, IRQF_SHARED, "AST_INT#", dev_p);
+#else
+	irq_set_irq_type(WB_CYAS_IRQ_INT, IRQ_TYPE_LEVEL_LOW);
+	/*
+	 * for shared IRQS must provide non NULL device ptr
+	 * othervise the int won't register
+	 * */
+	result = request_irq(WB_CYAS_IRQ_INT,	(irq_handler_t)cy_astoria_int_handler, IRQF_DISABLED, "AST_INT#", dev_p);
+#endif
 
 	if (result == 0) {
 		cy_as_hal_print_message(KERN_INFO"WB_CYAS_INT c110_pin: %d assigned IRQ #%d \n", irq_pin,  WB_CYAS_IRQ_INT);
@@ -497,28 +516,24 @@ int cy_as_hal_enable_NANDCLK(int flag)
 	struct clk *clk_onenand;
 
 	clk_nand = clk_get(NULL, "nfcon"); 
-	if ( IS_ERR(clk_nand) )
-	{
+	if (IS_ERR (clk_nand)) {
 		printk(KERN_ERR "Cannot get nfcon\n");
 	}
 	
 	 clk_onenand = clk_get(NULL, "onenand"); 
-        if ( IS_ERR(clk_onenand) )
-        {
+	if  (IS_ERR (clk_onenand)) {
                 printk(KERN_ERR "Cannot get nfcon\n");
         }
 
-	if(flag)
-	{
+	if (flag) {
 		clk_enable(clk_nand);
         	clk_enable(clk_onenand);
-		writel(0x180130e, iomux_vma);
-	}
-	else
-	{
+		writel(0x180130e, iomux_vma );
+	}  else {
 		clk_disable(clk_nand);
 		clk_disable(clk_onenand);
 	}
+
 	return 0;
 }
 
@@ -527,51 +542,53 @@ int cy_as_hal_enable_NANDCLK(int flag)
  */
 uint32_t cy_as_hal_processor_hw_init(cy_as_c110_dev_kernel *dev_p)
 {
-//	int 	reg_val;
+/*	int	reg_val;  */
 	struct clk *clk_nand;
 	struct clk *clk_onenand;
 	struct resource *nandArea;
-//	unsigned int cs_mem_base;
+/*	unsigned int cs_mem_base;  */
 	unsigned int cs_vma_base;
-	int temp=0;
-	int temp1=0;
+	uint32_t rv = 0 ;
+    int temp=0,temp1=0;
 	
 	cy_as_hal_print_message(KERN_INFO "init C110 hw...\n");
 
-	//set gpio settings for sideload chipset (nxz)
+	/*set gpio settings for sideload chipset  (nxz) */
 
-	//SIDE_CLK enable for power
+	/*SIDE_CLK enable for power */
 	s3c_gpio_cfgpin(WB_CLK_EN, S3C_GPIO_OUTPUT);
 	s3c_gpio_setpull(WB_CLK_EN, S3C_GPIO_PULL_NONE);
 	gpio_set_value(WB_CLK_EN, 1);
-	//msleep(10);
+	/* msleep (10);  */
 
-	//SIDE_WAKEUP for sideload
+	/* SIDE_WAKEUP for sideload */
 	s3c_gpio_cfgpin(WB_WAKEUP, S3C_GPIO_OUTPUT);
 	s3c_gpio_setpull(WB_WAKEUP, S3C_GPIO_PULL_NONE);
 	gpio_set_value(WB_WAKEUP, 1);
 
-	//SIDE_RST
+	/* SIDE_RST */
 	s3c_gpio_cfgpin(WB_RESET, S3C_GPIO_OUTPUT);
 	s3c_gpio_setpull(WB_RESET, S3C_GPIO_PULL_NONE);
 	gpio_set_value(WB_RESET, 0);
-	//msleep(100);
-	//gpio_set_value(WB_RESET, 1);
+	/* msleep (100);  */
+	/*gpio_set_value (WB_RESET,  1);  */
 
-	//SIDE_INT for interrupt  
+	/* SIDE_INT for interrupt */
 	s3c_gpio_cfgpin(WB_CYAS_INT, S3C_GPIO_SFN(0xF));
 	s3c_gpio_setpull(WB_CYAS_INT, S3C_GPIO_PULL_NONE);
+    s5p_register_gpio_interrupt(WB_CYAS_INT);
 
-	//SIDE_CD for detecting SD card
+	/* SIDE_CD for detecting SD card */
 	s3c_gpio_cfgpin(WB_SDCD_INT, S3C_GPIO_SFN(0xF));
 	s3c_gpio_setpull(WB_SDCD_INT, S3C_GPIO_PULL_NONE);
+     s5p_register_gpio_interrupt(WB_SDCD_INT);
 
-	//WB_AP_T_FLASH_DETECT 
+	/* WB_AP_T_FLASH_DETECT */
 	s3c_gpio_cfgpin(WB_AP_T_FLASH_DETECT, S3C_GPIO_OUTPUT);
 	s3c_gpio_setpull(WB_AP_T_FLASH_DETECT, S3C_GPIO_PULL_NONE);
 	gpio_set_value(WB_AP_T_FLASH_DETECT, 1);
 #if 0
-	//Tri-state MoviNAND bus
+	/*Tri-state MoviNAND bus */
 	s3c_gpio_cfgpin(GPIO_NAND_CLK, S3C_GPIO_INPUT);
 	s3c_gpio_cfgpin(GPIO_NAND_CMD, S3C_GPIO_INPUT);
 	s3c_gpio_cfgpin(GPIO_NAND_D0, S3C_GPIO_INPUT);
@@ -585,7 +602,7 @@ uint32_t cy_as_hal_processor_hw_init(cy_as_c110_dev_kernel *dev_p)
 	s3c_gpio_setpull(GPIO_NAND_D2, S3C_GPIO_PULL_NONE);
 	s3c_gpio_setpull(GPIO_NAND_D3, S3C_GPIO_PULL_NONE);
 
-	//Tri-state SD
+	/*Tri-state SD */
 	s3c_gpio_cfgpin(GPIO_T_FLASH_CLK, S3C_GPIO_INPUT);
 	s3c_gpio_cfgpin(GPIO_T_FLASH_CMD, S3C_GPIO_INPUT);
 	s3c_gpio_cfgpin(GPIO_T_FLASH_D0, S3C_GPIO_INPUT);
@@ -597,140 +614,136 @@ uint32_t cy_as_hal_processor_hw_init(cy_as_c110_dev_kernel *dev_p)
 	s3c_gpio_setpull(GPIO_T_FLASH_D0, S3C_GPIO_PULL_NONE);
 #endif
 
-	//Setup PADs for NAND controller
-	//GPIO_SIDE_CS
+	/*Setup PADs for NAND controller */
+	/*GPIO_SIDE_CS */
 #if 0
 	s3c_gpio_cfgpin(S5PV210_MP01(5), S3C_GPIO_SFN(3));
 	s3c_gpio_setpull(S5PV210_MP01(5), S3C_GPIO_PULL_NONE);
 	
-	//GPIO_SIDE_CLE
+	/*GPIO_SIDE_CLE */
 	s3c_gpio_cfgpin(S5PV210_MP03(0), S3C_GPIO_SFN(2));
 	s3c_gpio_setpull(S5PV210_MP03(0), S3C_GPIO_PULL_NONE);
 	
-	//GPIO_SIDE_ALE
+	/*GPIO_SIDE_ALE */
 	s3c_gpio_cfgpin(S5PV210_MP03(1), S3C_GPIO_SFN(2));
 	s3c_gpio_setpull(S5PV210_MP03(1), S3C_GPIO_PULL_NONE);
 
-	//GPIO_SIDE_WE
+	/*GPIO_SIDE_WE */
 	s3c_gpio_cfgpin(S5PV210_MP03(2), S3C_GPIO_SFN(2));
 	s3c_gpio_setpull(S5PV210_MP03(2), S3C_GPIO_PULL_NONE);
 
-	//GPIO_SIDE_RE
+	/*GPIO_SIDE_RE */
 	s3c_gpio_cfgpin(S5PV210_MP03(3), S3C_GPIO_SFN(2));
 	s3c_gpio_setpull(S5PV210_MP03(3), S3C_GPIO_PULL_NONE);
 
-	//GPIO_SIDE_RB
+	/*GPIO_SIDE_RB */
 	s3c_gpio_cfgpin(S5PV210_MP03(7), S3C_GPIO_SFN(2));
 	s3c_gpio_setpull(S5PV210_MP03(7), S3C_GPIO_PULL_NONE);
 #endif
-        //GPIO_SIDE_CS
-	s3c_gpio_cfgpin(S5PV310_GPY0(2), S3C_GPIO_SFN(3));
-	s3c_gpio_setpull(S5PV310_GPY0(2), S3C_GPIO_PULL_NONE);
+	/* GPIO_SIDE_CS */	/*sujan */
+	s3c_gpio_cfgpin(EXYNOS4_GPY0(2), S3C_GPIO_SFN(3));
+	s3c_gpio_setpull(EXYNOS4_GPY0(2), S3C_GPIO_PULL_NONE);
 	
-	//GPIO_SIDE_CLE
-	s3c_gpio_cfgpin(S5PV310_GPY2(0), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY2(0), S3C_GPIO_PULL_NONE);
+	/* GPIO_SIDE_CLE */
+	s3c_gpio_cfgpin(EXYNOS4_GPY2(0), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY2(0), S3C_GPIO_PULL_NONE);
 	
-	//GPIO_SIDE_ALE
-	s3c_gpio_cfgpin(S5PV310_GPY2(1), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY2(1), S3C_GPIO_PULL_NONE);
+	/* GPIO_SIDE_ALE */
+	s3c_gpio_cfgpin(EXYNOS4_GPY2(1), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY2(1), S3C_GPIO_PULL_NONE);
 
-	//GPIO_SIDE_WE
-	s3c_gpio_cfgpin(S5PV310_GPY0(5), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY0(5), S3C_GPIO_PULL_NONE);
+	/* GPIO_SIDE_WE */
+	s3c_gpio_cfgpin(EXYNOS4_GPY0(5), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY0(5), S3C_GPIO_PULL_NONE);
 
-	//GPIO_SIDE_RE
-	s3c_gpio_cfgpin(S5PV310_GPY0(4), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY0(4), S3C_GPIO_PULL_NONE);
+	/*GPIO_SIDE_RE */
+	s3c_gpio_cfgpin(EXYNOS4_GPY0(4), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY0(4), S3C_GPIO_PULL_NONE);
 
-	//GPIO_SIDE_RB
-	s3c_gpio_cfgpin(S5PV310_GPY2(2), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY2(2), S3C_GPIO_PULL_NONE);
+	/*GPIO_SIDE_RB */
+	s3c_gpio_cfgpin(EXYNOS4_GPY2(2), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY2(2), S3C_GPIO_PULL_NONE);
 
-	//GPIO_D0----GPIO_D7
-	s3c_gpio_cfgpin(S5PV310_GPY5(0), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(0), S3C_GPIO_PULL_NONE);
+	/*GPIO_D0----GPIO_D7 */
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(0), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(0), S3C_GPIO_PULL_NONE);
 
-	s3c_gpio_cfgpin(S5PV310_GPY5(1), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(1), S3C_GPIO_PULL_NONE);
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(1), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(1), S3C_GPIO_PULL_NONE);
 
-	s3c_gpio_cfgpin(S5PV310_GPY5(2), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(2), S3C_GPIO_PULL_NONE);
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(2), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(2), S3C_GPIO_PULL_NONE);
 
-	s3c_gpio_cfgpin(S5PV310_GPY5(3), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(3), S3C_GPIO_PULL_NONE);
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(3), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(3), S3C_GPIO_PULL_NONE);
 
-	s3c_gpio_cfgpin(S5PV310_GPY5(4), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(4), S3C_GPIO_PULL_NONE);
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(4), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(4), S3C_GPIO_PULL_NONE);
 
-	s3c_gpio_cfgpin(S5PV310_GPY5(5), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(5), S3C_GPIO_PULL_NONE);
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(5), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(5), S3C_GPIO_PULL_NONE);
 
-	s3c_gpio_cfgpin(S5PV310_GPY5(6), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(6), S3C_GPIO_PULL_NONE);
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(6), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(6), S3C_GPIO_PULL_NONE);
 
-	s3c_gpio_cfgpin(S5PV310_GPY5(7), S3C_GPIO_SFN(2));
-	s3c_gpio_setpull(S5PV310_GPY5(7), S3C_GPIO_PULL_NONE);
+	s3c_gpio_cfgpin(EXYNOS4_GPY5(7), S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(EXYNOS4_GPY5(7), S3C_GPIO_PULL_NONE);
 
 	#if 0	
-	clk = clk_get(NULL, "onenand"); //sujan
-	if ( IS_ERR(clk) )
-	{
+	clk = clk_get (NULL,  "onenand");  /*sujan */
+	if  (IS_ERR (clk)) {
 		printk(KERN_ERR "Cannot get nfcon\n");
 	}
 	clk_enable(clk);
 	#endif
 
 	/* Enable clock */
-	//clk = clk_get(NULL, "nfcon");
+	/*clk = clk_get (NULL,  "nfcon");  */
 	
-	clk_nand = clk_get(NULL, "nfcon"); //sujan
-	if ( IS_ERR(clk_nand) )
-	{
+	clk_nand = clk_get (NULL,  "nfcon");  /*sujan */
+	if  (IS_ERR (clk_nand)) {
 		printk(KERN_ERR "Cannot get nfcon\n");
 	}
+	
 	temp=clk_enable(clk_nand);
 	
-	 clk_onenand = clk_get(NULL, "onenand"); //sujan
-        if ( IS_ERR(clk_onenand) )
-        {
+	 clk_onenand = clk_get (NULL,  "onenand");  /*sujan */
+	if  (IS_ERR (clk_onenand)) {
                 printk(KERN_ERR "Cannot get nfcon\n");
         }
         temp1=clk_enable(clk_onenand);
 
 	printk(KERN_ALERT"\nClk_enable return value =%d\n",temp1);
-	   //set NAND Controller Configuration
+	   /*set NAND Controller Configuration */
 	nandArea = request_mem_region(CYAS_DEV_BASE_ADDR, 0x1000, "nandController");
-	if ( nandArea == NULL )
-	{
+	if  (nandArea == NULL) {
 		printk(KERN_ERR "Cannot request NAND controller's register memory region\n");
 	}
 
 	cs_vma_base = (unsigned int)ioremap(CYAS_DEV_BASE_ADDR, 0x1000);
-	if ( cs_vma_base == 0 )
-	{
+	if  (cs_vma_base == 0) {
 		printk(KERN_ERR "Cannot map NAND controller's register space to memory\n");	
 	}
 
 	/* Setup NAND CFG register */
-	writel(CYASHAL_PNAND_CONFIG_SET, cs_vma_base);
+	writel(CYASHAL_PNAND_CONFIG_SET, cs_vma_base );
 	
 	dev_p->m_phy_addr_base = (void *) CYAS_DEV_BASE_ADDR;
-	iomux_vma = dev_p->m_vma_addr_base = (void *) cs_vma_base;
-
-	printk(KERN_ALERT"\nm_phy_addr_base =%x\n",(uint32_t)dev_p->m_phy_addr_base);
-	printk(KERN_ALERT"\nm_vma_addr_base =%x\n",(uint32_t)dev_p->m_vma_addr_base);
+	dev_p->m_vma_addr_base = (void *) cs_vma_base;
+       iomux_vma = (u32)dev_p->m_vma_addr_base;
+	/*printk (KERN_ALERT"\nm_phy_addr_base = %x\n", dev_p->m_phy_addr_base);
+	printk (KERN_ALERT"\nm_vma_addr_base = %x\n", dev_p->m_vma_addr_base);  */
 	
 	dev_p->regulator = (void *) regulator_get(NULL,"vtf_2.8v");
 
 
 	/* 1. Enable NAND Controller and CE */
-    //	rv = IORD32( dev_p->m_vma_addr_base+NFCONT );
-	//rv &= ~0x800000 ;
-    //	rv &= ~NFCONT_MASK_CS ;
-    //	rv |= 1 ;
-    //	rv &= ~0x30000 ; /*Soft lock disable*/
-    //	IOWR32( dev_p->m_vma_addr_base+NFCONT, rv );
+    /*	rv = IORD32 (dev_p->m_vma_addr_base+NFCONT);
+	rv &= ~0x800000 ;
+	rv &= ~NFCONT_MASK_CS ;
+	rv |= 1 ;
+	rv &= ~0x30000 ;  */ /*Soft lock disable*/
+    /*	IOWR32 (dev_p->m_vma_addr_base+NFCONT,  rv);  */
 	
 	return 0;
 }
@@ -773,8 +786,7 @@ int cy_as_hal_c110_pnand_stop(const char *pgm, cy_as_hal_device_tag tag)
 		return 1 ;
 
 	cy_as_hal_print_message("<1>_stopping c110 HAL layer object\n");
-	if (dev_p->m_sig != CY_AS_C110_CRAM_HAL_SIG) 
-	{
+	if  (dev_p->m_sig != CY_AS_C110_CRAM_HAL_SIG) {
 		cy_as_hal_print_message("<1>%s: %s: bad HAL tag\n",	pgm, __func__) ;
 		return 1 ;
 	}
@@ -851,10 +863,10 @@ void cy_as_hal_write_register(
 					uint16_t addr, uint16_t data)
 {
 	cy_as_c110_dev_kernel *dev_p = (cy_as_c110_dev_kernel *)tag ;
-//    unsigned long flags;
+/*    unsigned long flags;  */
     u32 rv;
 #ifdef CHECK_MULTI_ACCESS
-    static atomic_t wrreg_usage_cnt = { 0 };    //throw an error if called from multiple threads!!!
+    static atomic_t wrreg_usage_cnt = { 0 } ;     /*throw an error if called from multiple threads!!! */
 #endif
 
 	#ifndef WESTBRIDGE_NDEBUG
@@ -864,8 +876,8 @@ void cy_as_hal_write_register(
 	}
 	#endif
 
-    // ******** disable interrupts *
-    //local_irq_save(flags);
+    /* ******** disable interrupts * */
+    /*local_irq_save (flags);  */
 #ifdef CHECK_MULTI_ACCESS
     if (atomic_read(&wrreg_usage_cnt) != 0 ) {
         cy_as_hal_print_message(KERN_ERR"CyAsC110HAL: !!!* CyAsHalWriteRegister usage:%d\n",atomic_read(&wrreg_usage_cnt));
@@ -874,7 +886,7 @@ void cy_as_hal_write_register(
 #endif
 
 	rv = IORD32( dev_p->m_vma_addr_base+NFCONT );
-	//rv &= ~0x800000 ;
+	/* rv &= ~0x800000 ;  */
 	rv &= ~NFCONT_MASK_CS;
 	rv |= 1 ;
 	IOWR32(  dev_p->m_vma_addr_base+NFCONT, rv );
@@ -885,16 +897,16 @@ void cy_as_hal_write_register(
 
 	IOWR16(dev_p->m_vma_addr_base+NFDATA, data );
 
-	//rv |= 0x800000 ;
+	/* rv |= 0x800000 ;  */
 	rv |= NFCONT_MASK_CS ;
 	rv &= 0xfffffffe ;
 	IOWR32(dev_p->m_vma_addr_base+NFCONT, rv);
 
-    // ***  reinable interrupts **
+    /* ***  reinable interrupts ** */
 #ifdef CHECK_MULTI_ACCESS
     atomic_dec(&wrreg_usage_cnt);
 #endif
-    //local_irq_restore(flags);
+    /* local_irq_restore (flags);  */
 }
 
 /*
@@ -906,10 +918,10 @@ uint16_t cy_as_hal_read_register(cy_as_hal_device_tag tag, uint16_t addr)
 {
 	cy_as_c110_dev_kernel *dev_p = (cy_as_c110_dev_kernel *)tag ;
 	uint16_t data  = 0 ;
-//    unsigned long flags;
+/*    unsigned long flags;  */
     u32 rv = 0 ; 
 #ifdef CHECK_MULTI_ACCESS
-    static atomic_t rdreg_usage_cnt = { 0 };    //throw an error if called from multiple threads!!!
+    static atomic_t rdreg_usage_cnt = { 0 } ;     /*throw an error if called from multiple threads!!! */
 #endif
 
 	#ifndef WESTBRIDGE_NDEBUG
@@ -919,8 +931,8 @@ uint16_t cy_as_hal_read_register(cy_as_hal_device_tag tag, uint16_t addr)
 	}
 	#endif
 
-    // ******** disable interrupts * 
-    //local_irq_save(flags);
+    /* ******** disable interrupts *  */
+    /*local_irq_save (flags);  */
 #ifdef CHECK_MULTI_ACCESS
     if (atomic_read(&rdreg_usage_cnt) != 0 ) {
         cy_as_hal_print_message(KERN_ERR"CyAsC110HAL: !!!* CyAsHalWriteRegister usage:%d\n",atomic_read(&rdreg_usage_cnt));
@@ -930,7 +942,7 @@ uint16_t cy_as_hal_read_register(cy_as_hal_device_tag tag, uint16_t addr)
 
 
     rv = IORD32( dev_p->m_vma_addr_base+NFCONT );
-    //rv &= ~0x800000 ;
+    /* rv &= ~0x800000 ;  */
     rv &= ~NFCONT_MASK_CS ;
     rv |= 1 ;
     IOWR32 ( dev_p->m_vma_addr_base+NFCONT, rv );
@@ -942,16 +954,16 @@ uint16_t cy_as_hal_read_register(cy_as_hal_device_tag tag, uint16_t addr)
 
     data = (unsigned short)IORD16( dev_p->m_vma_addr_base+NFDATA ) ;
 
-    //rv |= 0x800000 ;
+    /* rv |= 0x800000 ;  */
     rv |= NFCONT_MASK_CS ;
     rv &= 0xfffffffe ;
     IOWR32( dev_p->m_vma_addr_base+NFCONT, rv );
-	// ***  reinable interrupts **
+	/* ***  reinable interrupts ** */
 #ifdef CHECK_MULTI_ACCESS
     atomic_dec(&rdreg_usage_cnt);
-    // ****************************
+    /* **************************** */
 #endif
-   // local_irq_restore(flags);
+   /* local_irq_restore (flags);  */
 
 	return data ;
 }
@@ -968,12 +980,12 @@ static void cy_as_hal_pNand_lbd_read(cy_as_hal_device_tag tag, u32 row_addr, u16
     uint16_t w16cnt;
     uint16_t *ptr16;
     uint32_t rv = 0 ;
-//    unsigned long flags;
+/*    unsigned long flags;  */
 
-    w16cnt = count >> 1; // count/2
+    w16cnt = count >> 1;  /* count/2 */
     ptr16 = (uint16_t *)buff;
 
-   // local_irq_save(flags);
+   /* local_irq_save (flags);  */
 #ifdef CHECK_MULTI_ACCESS
     if (atomic_read(&gl_usage_cnt) != 0 ) {
         cy_as_hal_print_message(KERN_ERR"CyAsC110HAL: !!!* %s usage:%d\n", __FUNCTION__, atomic_read(&gl_usage_cnt));
@@ -983,7 +995,7 @@ static void cy_as_hal_pNand_lbd_read(cy_as_hal_device_tag tag, u32 row_addr, u16
 
     /* 1. Enable NAND Controller and CE */
     rv = readl( dev_p->m_vma_addr_base+NFCONT );
-    //rv &= ~0x800000 ;
+    /*rv &= ~0x800000 ;  */
     rv &= ~NFCONT_MASK_CS ;
     rv |= 1 ;
     rv &= ~0x30000 ; /*Soft lock disable*/
@@ -1006,14 +1018,14 @@ static void cy_as_hal_pNand_lbd_read(cy_as_hal_device_tag tag, u32 row_addr, u16
     /** ************************************ **/
 
     /* 9. Disable NAND controller and CE */
-    //rv |= 0x800000 ;
+    /*rv |= 0x800000 ;  */
     rv |= NFCONT_MASK_CS ;
     rv &= 0xfffffffe ;
     writel ( rv, dev_p->m_vma_addr_base+NFCONT );
 #ifdef CHECK_MULTI_ACCESS
     atomic_dec(&gl_usage_cnt);
 #endif
-   // local_irq_restore(flags);
+   /* local_irq_restore (flags);  */
 }
 
 /**
@@ -1026,12 +1038,12 @@ static void cy_as_hal_pNand_lbd_write(cy_as_hal_device_tag tag, u32 row_addr, u1
     uint16_t w16cnt;
     uint32_t *ptr16;
     uint32_t rv = 0 ;
-//    unsigned long flags;
+/*    unsigned long flags;  */
 
-    w16cnt = count >> 2; // count/2
+    w16cnt = count >> 2;  /* count/2 */
     ptr16 = (uint32_t *)buff;
 
-    //local_irq_save(flags);
+    /*local_irq_save (flags);  */
 #ifdef CHECK_MULTI_ACCESS    
     if (atomic_read(&gl_usage_cnt) != 0 ) {
         cy_as_hal_print_message(KERN_ERR"CyAsC110HAL: !!!* %s usage:%d\n", __FUNCTION__, atomic_read(&gl_usage_cnt));
@@ -1041,7 +1053,7 @@ static void cy_as_hal_pNand_lbd_write(cy_as_hal_device_tag tag, u32 row_addr, u1
 
     /* 1. Enable NAND Controller and CE */
     rv = IORD32( dev_p->m_vma_addr_base+NFCONT );
-    //rv &= ~0x800000 ;
+    /*rv &= ~0x800000 ;  */
     rv &= ~NFCONT_MASK_CS ;
     rv |= 1 ;
     rv &= ~0x30000 ; /*Soft lock disable*/
@@ -1062,14 +1074,14 @@ static void cy_as_hal_pNand_lbd_write(cy_as_hal_device_tag tag, u32 row_addr, u1
     IOWR8( dev_p->m_vma_addr_base+NFCMMD, CYAS_PNAND_LBD_PGMPAGE_B2);
 
     /* 9. Disable NAND controller and CE */
-    //rv |= 0x800000 ;
+    /*rv |= 0x800000 ;  */
     rv |= NFCONT_MASK_CS ;
     rv &= 0xfffffffe ;
     IOWR32( dev_p->m_vma_addr_base+NFCONT, rv );
 #ifdef CHECK_MULTI_ACCESS
     atomic_dec(&gl_usage_cnt);
 #endif
-   // local_irq_restore(flags);
+   /* local_irq_restore (flags);  */
 }
 #endif
 
@@ -1106,8 +1118,7 @@ static inline bool prep_for_next_xfer(cy_as_hal_device_tag tag, uint8_t ep)
 		 */
 		if ((end_points[ep].req_length - end_points[ep].req_xfer_cnt)	>= HAL_DMA_PKT_SZ) {
 				end_points[ep].dma_xfer_sz = HAL_DMA_PKT_SZ;
-		}
-		else {
+		}  else {
 			/*
 			 * that would be the last chunk less
 			 * than P-port max size
@@ -1174,10 +1185,10 @@ static void cy_service_e_p_dma_read_request(
 			cy_as_c110_dev_kernel *dev_p, uint8_t ep)
 {
 	cy_as_hal_device_tag tag = (cy_as_hal_device_tag)dev_p ;
-	uint16_t  v, size;
+	uint16_t  v, i, size;
 	register uint32_t	*dptr;
 	uint16_t ep_dma_reg = CY_AS_MEM_P0_EP2_DMA_REG + ep - 2;
-    //register void     *read_addr ;
+    /* register void     *read_addr ;  */
     uint16_t w16cnt;
     uint32_t rv = 0 ;
 	register void *vma_addr_base = dev_p->m_vma_addr_base;
@@ -1200,9 +1211,9 @@ static void cy_service_e_p_dma_read_request(
 	 */
 	dptr = (uint32_t *) end_points[ep].data_p;
 
-//	read_addr = dev_p->m_vma_addr_base + CYAS_DEV_CALC_EP_ADDR(ep) ;
+/*	read_addr = dev_p->m_vma_addr_base + CYAS_DEV_CALC_EP_ADDR (ep) ;  */
 
-	//printk(KERN_ERR"\ndebug at %s %d,ptr=%x",__func__,__LINE__,dptr);
+	/* printk (KERN_ERR"\ndebug at %s %d, ptr = %x", __func__, __LINE__, dptr);  */
 	cy_as_hal_assert(size != 0);
 
 	if (size || dptr) 
@@ -1213,14 +1224,14 @@ static void cy_service_e_p_dma_read_request(
 	#else
 	{
 
-	    w16cnt = size >> 2; // count/2
+	    w16cnt = size >> 2;  /* count/2 */
 #if 1
 	    /* 1. Enable NAND Controller and CE */
 	    rv = IORD32( vma_addr_base+NFCONT );
-	    //rv &= ~0x800000 ;
+	    /* rv &= ~0x800000 ;  */
 	    rv &= ~NFCONT_MASK_CS ;
 	    rv |= 1 ;
-	   // rv &= ~0x30000 ; /*Soft lock disable*/
+	   /* rv &= ~0x30000 ;  */ /*Soft lock disable*/
 	    IOWR32 ( vma_addr_base+NFCONT, rv);
 #endif
 	    IOWR8( vma_addr_base+NFCMMD, CYAS_PNAND_LBD_READ_B1);
@@ -1242,7 +1253,7 @@ static void cy_service_e_p_dma_read_request(
 
 #if 1
 	    /* 9. Disable NAND controller and CE */
-	    //rv |= 0x800000 ;
+	    /* rv |= 0x800000 ;  */
 	    rv |= NFCONT_MASK_CS ;
 	    rv &= 0xfffffffe ;
 	    IOWR32 (  vma_addr_base+NFCONT, rv);
@@ -1276,7 +1287,7 @@ static void cy_service_e_p_dma_read_request(
 		v = end_points[ep].dma_xfer_sz/*HAL_DMA_PKT_SZ*/ |
 				CY_AS_MEM_P0_E_pn_DMA_REG_DMAVAL ;
 		cy_as_hal_write_register(tag, ep_dma_reg, v);
-		//ndelay(200);
+		/*ndelay (200);  */
 	} else {
 		end_points[ep].pending	  = cy_false ;
 		end_points[ep].type		 = cy_as_hal_none ;
@@ -1300,7 +1311,7 @@ static void cy_service_e_p_dma_read_request(
 	}
 }
 
-//static uint32_t testDMAbuffer[256];
+static uint32_t testDMAbuffer[256];
 /*
  * c110_cpu needs to transfer data to ASTORIA EP buffer
  */
@@ -1313,9 +1324,9 @@ static void cy_service_e_p_dma_write_request(
 	uint32_t	*dptr;
     	uint32_t rv = 0 ;
     	uint16_t w16cnt;
-	//register void     *write_addr ;
+	/* register void     *write_addr ;  */
 	void *vma_addr_base =  dev_p->m_vma_addr_base;
-        register void *vma_addr_data = vma_addr_base + NFDATA;
+    register void *vma_addr_data = vma_addr_base + NFDATA;
 
 	cy_as_hal_device_tag tag = (cy_as_hal_device_tag)dev_p ;
 	/*
@@ -1325,9 +1336,9 @@ static void cy_service_e_p_dma_write_request(
 	size = end_points[ep].dma_xfer_sz ;
 	dptr = (uint32_t *)end_points[ep].data_p ;
 
-//	write_addr = (void *) (dev_p->m_vma_addr_base + CYAS_DEV_CALC_EP_ADDR(ep)) ;
+/*	write_addr =  (void *)  (dev_p->m_vma_addr_base + CYAS_DEV_CALC_EP_ADDR (ep)) ;  */
 
-#if 0 //def DBGPRN_ENABLED
+#if 0 /*def DBGPRN_ENABLED */
 			DBGPRN("<1>cy_service_e_p_dma_write_request cb: size:%d\n",
 				size);
 #endif
@@ -1335,23 +1346,22 @@ static void cy_service_e_p_dma_write_request(
 	/*
 	 * perform the soft DMA transfer, soft in this case
 	 */
-#if 0 //def  __CYAS_HAL_USE_DMA__
-	if(size == 512)
-	{
+#if 0 /*def  __CYAS_HAL_USE_DMA__ */
+	if (size == 512) {
 		dma_addr_t dma_source_addr = dma_map_single(NULL,dptr,size,DMA_TO_DEVICE);
-		//dma_addr_t dma_dst_addr = dma_map_single(NULL,testDMAbuffer,size,DMA_FROM_DEVICE);
-		dma_addr_t dma_dst_addr = dev_p->m_phy_addr_base + NFDATA ; //dma_map_single(NULL,vma_addr_data,4,DMA_FROM_DEVICE);
-		//spin_lock_irqsave(&cyashal_work->lock, flags);
+		/*dma_addr_t dma_dst_addr = dma_map_single (NULL, testDMAbuffer, size, DMA_FROM_DEVICE);  */
+		dma_addr_t dma_dst_addr = dev_p->m_phy_addr_base + NFDATA ;  /*dma_map_single (NULL, vma_addr_data, 4, DMA_FROM_DEVICE);  */
+		/*spin_lock_irqsave (&cyashal_work->lock,  flags);  */
 		cyashal_work->state |= TXBUSY;
-		//spin_unlock_irqrestore(&cyashal_work->lock, flags);
-		//s3c2410_dma_config(cyashal_work->tx_dmach, 1);
+		/*spin_unlock_irqrestore (&cyashal_work->lock,  flags);  */
+		/*s3c2410_dma_config (cyashal_work->tx_dmach,  1);  */
 		s3c2410_dma_devconfig(cyashal_work->tx_dmach, S3C_DMA_MEM2MEM_P, dma_source_addr);
 		/* 1. Enable NAND Controller and CE */
 		rv = IORD32( vma_addr_base+NFCONT );
-		//rv &= ~0x800000 ;
+		/*rv &= ~0x800000 ;  */
 		rv &= ~NFCONT_MASK_CS ;
 		rv |= 1 ;
-		//rv &= ~0x30000 ; /*Soft lock disable*/
+		/*rv &= ~0x30000 ;  */ /*Soft lock disable*/
 		IOWR32( vma_addr_base+NFCONT, rv );
 		IOWR8( vma_addr_base+NFCMMD, CYAS_PNAND_LBD_PGMPAGE_B1);
 		IOWR8( vma_addr_base+NFADDR, (u8)(0x0) );
@@ -1364,12 +1374,11 @@ static void cy_service_e_p_dma_write_request(
 		s3c2410_dma_enqueue(cyashal_work->tx_dmach, (void *)cyashal_work,
 					   dma_dst_addr, size);
 
-		//s3c2410_dma_ctrl(cyashal_work->tx_dmach, S3C2410_DMAOP_START);
+		/*s3c2410_dma_ctrl (cyashal_work->tx_dmach,  S3C2410_DMAOP_START);  */
 
-		//rv = msecs_to_jiffies(10) + 10;
-		//rv = wait_for_completion_timeout(&cyashal_work->xfer_completion, rv);
-		while(1)
-		{
+		/*rv = msecs_to_jiffies (10) + 10;  */
+		/*rv = wait_for_completion_timeout (&cyashal_work->xfer_completion,  rv);  */
+		while (1) {
 			ndelay(10);
 			if(( cyashal_work->state & TXBUSY) == 0)
 			break;
@@ -1379,16 +1388,15 @@ static void cy_service_e_p_dma_write_request(
 		/** finally issue a PGM cmd **/
 		IOWR8( vma_addr_base+NFCMMD, CYAS_PNAND_LBD_PGMPAGE_B2);
 		/* 9. Disable NAND controller and CE */
-		//rv |= 0x800000 ;
+		/*rv |= 0x800000 ;  */
 		rv |= NFCONT_MASK_CS ;
 		rv &= 0xfffffffe ;
 		IOWR32( vma_addr_base+NFCONT, rv );
-		#if 0 //def DBGPRN_ENABLED
+		#if 0 /*def DBGPRN_ENABLED */
 			DBGPRN("<1>wait_for_completion_timeout: 0x%x 0x%x\n",
 			 dma_source_addr,vma_addr_data);
 		#endif
-	}
-	else
+	} else
 #endif
 	{
 	if (size){
@@ -1400,14 +1408,14 @@ static void cy_service_e_p_dma_write_request(
 	#else
 	register uint32_t   a,b,c,d,e,f,g,h;
 
-    	w16cnt = size >> 2; // count/2
+	w16cnt = size >> 2;  /* count/2 */
 #if 1
     	/* 1. Enable NAND Controller and CE */
     	rv = IORD32( vma_addr_base+NFCONT );
-    	//rv &= ~0x800000 ;
+	/* rv &= ~0x800000 ;  */
     	rv &= ~NFCONT_MASK_CS ;
     	rv |= 1 ;
-    //	rv &= ~0x30000 ; /*Soft lock disable*/
+    /*	rv &= ~0x30000 ;  */ /*Soft lock disable*/
     	IOWR32( vma_addr_base+NFCONT, rv );
 #endif
     	IOWR8( vma_addr_base+NFCMMD, CYAS_PNAND_LBD_PGMPAGE_B1);
@@ -1422,8 +1430,7 @@ static void cy_service_e_p_dma_write_request(
     	while (w16cnt--) {
 		IOWR32( vma_addr_data, *dptr++);
 	}*/
-	for(i = size/32; i > 0 ; i--)
-	{
+	for (i = size/32;  i > 0 ;  i--) {
 		a = *dptr++;
                 b = *dptr++;
                 c = *dptr++;
@@ -1441,11 +1448,9 @@ static void cy_service_e_p_dma_write_request(
                 IOWR32(vma_addr_data,  f);
                 IOWR32(vma_addr_data,  g);
                 IOWR32(vma_addr_data,  h);
-
          }
 
-         switch ((size & 0x1F)/4)
-	{
+	switch  ((size & 0x1F)/4) {
 		case 15:
 			IOWR32(vma_addr_data,  *dptr++);
 
@@ -1487,8 +1492,7 @@ static void cy_service_e_p_dma_write_request(
                    break ;
 	 }
 
-         if(size & 3)
-	 {
+	if (size & 3) {
 	    uint16_t *t16;
 		t16=(uint16_t *)dptr;
 	      if(size &2)
@@ -1502,7 +1506,7 @@ static void cy_service_e_p_dma_write_request(
 	/** finally issue a PGM cmd **/
     	IOWR8( vma_addr_base+NFCMMD, CYAS_PNAND_LBD_PGMPAGE_B2);
     	/* 9. Disable NAND controller and CE */
-    	//rv |= 0x800000 ;
+	/* rv |= 0x800000 ;  */
     	rv |= NFCONT_MASK_CS ;
     	rv &= 0xfffffffe ;
     	IOWR32( vma_addr_base+NFCONT, rv );
@@ -1541,7 +1545,7 @@ static void cy_service_e_p_dma_write_request(
 		v = end_points[ep].dma_xfer_sz |
 			CY_AS_MEM_P0_E_pn_DMA_REG_DMAVAL ;
 		cy_as_hal_write_register(tag, addr, v) ;
-		//udelay(1);
+		/* udelay (1);  */
 	} else {
 
 	   end_points[ep].pending	  = cy_false ;
@@ -1555,7 +1559,7 @@ static void cy_service_e_p_dma_write_request(
 		 * notify the API that we are done with rq on this EP
 		 */
 		if (callback) {
-#if 0//def DBGPRN_ENABLED
+#if 0/*def DBGPRN_ENABLED */
 			DBGPRN("<1>trigg wr_dma completion cb: xfer_sz:%d\n",
 				end_points[ep].req_xfer_cnt);
 #endif
@@ -1993,7 +1997,7 @@ void cy_as_hal_mem_set(void *ptr, uint8_t value, uint32_t cnt)
 	memset(ptr, value, cnt) ;
 }
 
-static int          cy_as_hal_sleep_condition = 0;
+static int          cy_as_hal_sleep_condition;
 
 /*
  * This function is expected to create a sleep channel.
@@ -2041,21 +2045,31 @@ cy_bool cy_as_hal_wake(cy_as_hal_sleep_channel *channel)
 
 uint32_t cy_as_hal_disable_interrupts()
 {
-	if (0 == intr__enable)
-	{
-		//cy_as_hal_write_register( m_c110_list_p, CY_AS_MEM_P0_INT_MASK_REG, 0 );
-	}
-	intr__enable++ ;
-	return 0 ;
+	#if 0
+    uint16_t v = cy_as_hal_read_register(m_c110_list_p,CY_AN_MEM_P0_INT_MASK_REG);
+    if  (!intr__enable) {
+          cy_as_hal_write_register(m_c110_list_p,CY_AN_MEM_P0_INT_MASK_REG,0);
+    }
+
+    intr__enable++ ;
+    return (uint32_t)v ;
+	#else
+	return 0;
+	#endif
 }
 
 void cy_as_hal_enable_interrupts(uint32_t val)
 {
-	intr__enable-- ;
-	if (0 == intr__enable)
-	{
-		//cy_as_hal_write_register( m_c110_list_p, CY_AS_MEM_P0_INT_MASK_REG, CYAS_INT_MASK | CYAS_DRQ_MASK );
-	}
+	#if 0
+    intr__enable-- ;
+    if  (!intr__enable) {
+		val = (CY_AS_MEM_P0_INTR_REG_MCUINT |
+				CY_AS_MEM_P0_INTR_REG_MBINT |
+				CY_AS_MEM_P0_INTR_REG_PMINT |
+				CY_AN_MEM_P0_INTR_REG_DRQINT) ;
+		cy_as_hal_write_register(m_c110_list_p,CY_AN_MEM_P0_INT_MASK_REG,(uint16_t)val);
+    }
+	#endif
 }
 
 /*
@@ -2119,21 +2133,20 @@ cy_bool cy_as_hal_sync_device_clocks(cy_as_hal_device_tag tag)
 void cy_as_hal_dump_reg(cy_as_hal_device_tag tag)
 {
 	u16		data16;
+	int	retval = 0;
 #if 1
 	int 	i;
 	printk(KERN_ERR "=======================================\n");
 	printk(KERN_ERR "========   Astoria REG Dump      =========\n");
-	for ( i=0 ; i<256 ; i++ )
-	{
+	for  (i = 0 ;  i < 256 ;  i++) {
 		data16 = cy_as_hal_read_register(tag, i);
 		printk(KERN_ERR "%4.4x ", data16);
 		if( i%8 == 7 )
 			printk(KERN_ERR "\n");
 	}
 #endif
-#if 0
 	printk(KERN_ERR "=======================================\n\n");
-
+#if 0
 	printk(KERN_ERR "========   Astoria REG Test      =========\n");
 	
 	cy_as_hal_write_register(tag, CY_AS_MEM_MCU_MAILBOX1, 0xAAAA);
@@ -2141,20 +2154,17 @@ void cy_as_hal_dump_reg(cy_as_hal_device_tag tag)
 	cy_as_hal_write_register(tag, CY_AS_MEM_MCU_MAILBOX3, 0xB4C3);
 
 	data16 = cy_as_hal_read_register(tag, CY_AS_MEM_MCU_MAILBOX1);
-	if( data16 != 0xAAAA)
-	{
+	if (data16 != 0xAAAA) {
 		printk(KERN_ERR "REG Test Error in CY_AS_MEM_MCU_MAILBOX1 - %4.4x\n", data16);
 		retval = 1; 
 	}
 	data16 = cy_as_hal_read_register(tag, CY_AS_MEM_MCU_MAILBOX2);
-	if( data16 != 0x5555)
-	{
+	if (data16 != 0x5555) {
 		printk(KERN_ERR "REG Test Error in CY_AS_MEM_MCU_MAILBOX2 - %4.4x\n", data16);
 		retval = 1;
 	}
 	data16 = cy_as_hal_read_register(tag, CY_AS_MEM_MCU_MAILBOX3);
-	if( data16 != 0xB4C3)
-	{	
+	if (data16 != 0xB4C3) {
 		printk(KERN_ERR "REG Test Error in CY_AS_MEM_MCU_MAILBOX3 - %4.4x\n", data16);
 		retval = 1;
 	}
@@ -2163,9 +2173,8 @@ void cy_as_hal_dump_reg(cy_as_hal_device_tag tag)
 		printk(KERN_ERR "REG Test fail !!!!!\n");
 	else
 		printk(KERN_ERR "REG Test success !!!!!\n");
-
-	printk(KERN_ERR "=======================================\n\n");
 #endif
+	printk(KERN_ERR "=======================================\n\n");
 }
 
 /*
@@ -2178,6 +2187,7 @@ int cy_as_hal_c110_pnand_start(const char *pgm,
 	int i;
 	u16 data16[4];
 	uint32_t err = 0;
+	int retval;
 	/* No debug mode support through argument as of now */
 	(void)debug;
 
@@ -2239,7 +2249,7 @@ int cy_as_hal_c110_pnand_start(const char *pgm,
 	msleep(10);
 	gpio_set_value(WB_RESET,1);
 	msleep(50);
-	cy_as_hal_write_register((cy_as_hal_device_tag)dev_p,CY_AS_MEM_RST_CTRL_REG,CY_AS_MEM_RST_CTRL_REG_HARD);
+	cy_as_hal_write_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_RST_CTRL_REG, CY_AS_MEM_RST_CTRL_REG_HARD) ;
 	msleep(10);
 
 	data16[0] = cy_as_hal_read_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_PNAND_CFG);
@@ -2252,7 +2262,7 @@ int cy_as_hal_c110_pnand_start(const char *pgm,
 	*  prinks may take milliseconds, and the data of interest
 	*  will fall outside the LA capture window/buffer
 	*/
-	//cy_as_hal_dump_reg((cy_as_hal_device_tag)dev_p);
+/*	cy_as_hal_dump_reg ((cy_as_hal_device_tag)dev_p);  */
 
 	data16[0] = cy_as_hal_read_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_CM_WB_CFG_ID);
 
@@ -2302,19 +2312,18 @@ bus_acc_error:
 	#if 1
 	{
 		int i=100;
-		//s3c_gpio_cfgpin(WB_CYAS_INT,S3C_GPIO_OUTPUT);
-		//s3c_gpio_setpull(WB_CYAS_INT,S3C_GPIO_PULL_NONE);
-		do
-		{
+		/* s3c_gpio_cfgpin (WB_CYAS_INT, S3C_GPIO_OUTPUT);  */
+		/* s3c_gpio_setpull (WB_CYAS_INT, S3C_GPIO_PULL_NONE);  */
+		do {
 			gpio_set_value(WB_RESET,0);
 			gpio_set_value(WB_WAKEUP,0);
 			gpio_set_value(WB_CLK_EN,0);
-			//gpio_set_value(WB_CYAS_IRQ_INT,0);
+			/* gpio_set_value (WB_CYAS_IRQ_INT, 0);  */
 			msleep(10);
 			gpio_set_value(WB_RESET,1);
 			gpio_set_value(WB_WAKEUP,1);
 			gpio_set_value(WB_CLK_EN,1);
-			//gpio_set_value(WB_CYAS_IRQ_INT,1);
+			/* gpio_set_value (WB_CYAS_IRQ_INT, 1);  */
 			msleep(10);
 		}while(i--);
 		
@@ -2325,8 +2334,7 @@ bus_acc_error:
 	 uint32_t i1=0;
 	 uint16_t read_val;
 	
-	for(i1=0;i1<100;i1++)
-	{
+	for (i1 = 0; i1 < 100; i1++) {
 		read_val = cy_as_hal_read_register((cy_as_hal_device_tag)dev_p, CY_AS_MEM_CM_WB_CFG_ID);
 	}
 	}
@@ -2355,44 +2363,33 @@ int	cy_as_hal_detect_SD(void)
 {
 	uint8_t f_det;
 	f_det = gpio_get_value(WB_SDCD_INT);
-	if( f_det ) // removed;
-	{		
+	if (f_det) {/* removed;  */
 	gpio_set_value(WB_AP_T_FLASH_DETECT,1);	
 		return 0;
-	}
-	else
+	}  else
 	gpio_set_value(WB_AP_T_FLASH_DETECT,0);	
-		//inserted 
+		/*inserted */
 	return 1;
 }
-static int g_SDPW_count = 0;
+static int g_SDPW_count;
 int cy_as_hal_enable_power(cy_as_hal_device_tag tag, int flag)
 {
 
 	cy_as_c110_dev_kernel *dev_p = (cy_as_c110_dev_kernel *)tag;
 	struct regulator *regulator = (struct regulator *) dev_p->regulator;
-		if(flag)
-		{
-			if( g_SDPW_count == 0 )
-			{
+		if (flag) {
+			if (g_SDPW_count == 0) {
 				g_SDPW_count++;
 				regulator_enable(regulator);
-			}
-			else
-			{
+			} else {
 				cy_as_hal_print_message(KERN_ERR"%s: enable g_SDPW_count=%d\n", __func__,g_SDPW_count);
 			}
 			
-		}
-		else
-		{
-			if( g_SDPW_count == 1 )
-			{
+		}  else {
+			if (g_SDPW_count == 1) {
 				g_SDPW_count--;
 		        	regulator_disable(regulator);
-			}
-			else
-			{
+			}  else {
 				cy_as_hal_print_message(KERN_ERR"%s: disable g_SDPW_count=%d\n", __func__,g_SDPW_count);
 			}
 
@@ -2404,7 +2401,7 @@ int cy_as_hal_configure_sd_isr(void *dev_p, irq_handler_t isr_function)
 	int result;
 	int irq_pin  = WB_SDCD_INT;
 
-	set_irq_type(WB_SDCD_IRQ_INT, IRQ_TYPE_EDGE_BOTH);
+	irq_set_irq_type(WB_SDCD_IRQ_INT, IRQ_TYPE_EDGE_BOTH);
 
 	/*
 	 * for shared IRQS must provide non NULL device ptr
@@ -2416,12 +2413,9 @@ int cy_as_hal_configure_sd_isr(void *dev_p, irq_handler_t isr_function)
 
 	cy_as_hal_print_message("%s: request_irq - %d\n", __func__, result);
 
-	if (result == 0) 
-	{
+	if  (result == 0) {
 		cy_as_hal_print_message(KERN_INFO"WB_SDCD_IRQ_INT C110_pin: %d assigned IRQ #%d \n",irq_pin, WB_SDCD_IRQ_INT );
-	}
-	else 
-	{
+	}  else {
 		cy_as_hal_print_message("WB_SDCD_IRQ_INT: interrupt failed to register - %d\n", result);
 		gpio_free(irq_pin);
 		cy_as_hal_print_message("WB_SDCD_IRQ_INT: can't get assigned IRQ %i for INT#\n", WB_SDCD_IRQ_INT);

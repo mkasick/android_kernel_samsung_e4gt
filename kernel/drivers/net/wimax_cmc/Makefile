@@ -1,5 +1,4 @@
-
-obj-$(CONFIG_WIMAX_CMC)		+=cmc7xx_sdio.o
-
-cmc7xx_sdio-y	:= control.o hardware.o receive.o wimax_sdio.o download.o wimax_i2c.o firmware.o
-
+ifeq ($(CONFIG_WIMAX_CMC7XX_DEBUG),y)
+	EXTRA_CFLAGS		+= -DDEBUG
+endif
+obj-$(CONFIG_WIMAX_CMC)	+= wimax_sdio.o firmware.o wimax_i2c.o

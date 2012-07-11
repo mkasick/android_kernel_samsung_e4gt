@@ -36,9 +36,9 @@ struct notification_trig_data {
 	unsigned long delay_off;	/* milliseconds off */
 	unsigned long blink_cnt;    /* number of blink times */
 	unsigned long off_duration; /* blink stop duration */
-	
+
 	unsigned long current_blink_cnt;    /* current blink count */
-	
+
 	struct timer_list timer;
 	struct alarm alarm;
 	struct wake_lock wakelock;
@@ -49,7 +49,7 @@ static int led_rtc_set_alarm(struct led_classdev *led_cdev, unsigned long msec)
 	struct notification_trig_data *timer_data = led_cdev->trigger_data;
 	ktime_t expire;
 	ktime_t now;
-	
+
 	now = ktime_get_real();
 	expire = ktime_add(now, ns_to_ktime((u64)msec*1000*1000));
 
@@ -104,7 +104,7 @@ static void led_timer_function(unsigned long data)
 	}
 
 	led_set_brightness(led_cdev, brightness);
-	
+
 	led_rtc_set_alarm(led_cdev, delay);
 }
 
@@ -283,7 +283,7 @@ static void notification_trig_activate(struct led_classdev *led_cdev)
 	init_timer(&timer_data->timer);
 	timer_data->timer.function = led_timer_function;
 	timer_data->timer.data = (unsigned long) led_cdev;
-	
+
 	alarm_init(&timer_data->alarm, ANDROID_ALARM_RTC_WAKEUP,
 			led_rtc_timer_function);
 	wake_lock_init(&timer_data->wakelock, WAKE_LOCK_SUSPEND, "ledtrig_rtc_timer");
@@ -362,4 +362,3 @@ module_exit(notification_trig_exit);
 
 MODULE_DESCRIPTION("Notification LED trigger");
 MODULE_LICENSE("GPL");
-

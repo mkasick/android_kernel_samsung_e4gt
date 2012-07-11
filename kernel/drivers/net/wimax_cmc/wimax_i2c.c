@@ -3,26 +3,53 @@
  *
  * EEPROM access functions
  */
-#include "headers.h"
-#include "download.h"
+//#include "download.h"
 #include "wimax_i2c.h"
 #include "firmware.h"
-#include "wimax_plat.h"
 #include <linux/i2c.h>
 #include <linux/delay.h>
 #include <mach/gpio.h>
 #include <plat/gpio-cfg.h>
 #include <linux/vmalloc.h>
+#include <plat/gpio-cfg.h>
+#include <mach/regs-gpio.h>
+#include <mach/gpio-u1.h>
+#include <linux/slab.h>
+
+#define WIMAX_EN        GPIO_WIMAX_EN
+#define I2C_SEL         GPIO_WIMAX_I2C_CON
+#define EEPROM_SCL      GPIO_CMC_SCL_18V
+#define EEPROM_SDA      GPIO_CMC_SDA_18V
+
 
 #define MAX_WIMAXBOOTIMAGE_SIZE		6000
 #define MAX_BOOT_WRITE_LENGTH		128
 #define WIMAX_EEPROM_ADDRLEN 2
 
 
-extern struct image_data g_wimax_image;
+struct boot_image_data g_wimax_image;
 
 void wimax_i2c_reset(void);
 
+void dump_buffer(const char *desc, u_char *buffer, u_int len)
+{
+	char    print_buf[256] = {0};
+	char    chr[8] = {0};
+	int i;
+	/* dump packets */
+	u_char  *b = buffer;
+	pr_debug("%s (%d) =>", desc, len);
+
+	for (i = 0; i < len; i++) {
+		sprintf(chr, " %02x", b[i]);
+		strcat(print_buf, chr);
+		if (((i + 1) != len) && (i % 16 == 15)) {
+			pr_debug("%s", print_buf);
+			memset(print_buf, 0x0, 256);
+		}
+	}
+	pr_debug("%s", print_buf);
+}
 void eeprom_poweron(void)
 {
 	mutex_init(&g_wimax_image.lock);
@@ -55,8 +82,6 @@ void eeprom_poweroff(void)
 	gpio_set_value(WIMAX_EN, GPIO_LEVEL_LOW);
 
 	gpio_set_value(I2C_SEL, GPIO_LEVEL_LOW); // SEL = 0 to switch i2c-eeprom path to wimax
-        msleep(10);
-
 
 	msleep(100);
 
@@ -215,7 +240,7 @@ int wimax_i2c_check_ack(void)
 	val = gpio_get_value(EEPROM_SDA);
 
 	if (val == 1) {
-		dump_debug("EEPROM ERROR: NO ACK!!");
+		pr_debug("EEPROM ERROR: NO ACK!!");
 		return -1;
 	}
 
@@ -278,7 +303,7 @@ int wimax_i2c_write_buffer(char *data, int len)
 int wimax_i2c_write(u_short addr, u_char *data, int length)
 {
 	int ret = 0;
-	
+
 	/* write buffer */
 	wimax_i2c_init();
 	ret = wimax_i2c_write_cmd();
@@ -292,7 +317,7 @@ int wimax_i2c_read(u_short addr, u_char *data, int length)
 {
 	int	i = 0;
 	int ret = 0;
-	
+
 	/* read buffer */
 	wimax_i2c_init();
 	ret = wimax_i2c_write_cmd();
@@ -323,7 +348,7 @@ int wimax_i2c_write(u_short addr, u_char *data, int length)
 	int rc;
 	int len;
 	char data_buffer[MAX_BOOT_WRITE_LENGTH + WIMAX_EEPROM_ADDRLEN];
-	struct i2c_msg msg; 
+	struct i2c_msg msg;
 	data_buffer[0] = (unsigned char)((addr >> 8) & 0xff);
 	data_buffer[1] = (unsigned char)(addr & 0xff);
 	while(length)
@@ -333,9 +358,9 @@ int wimax_i2c_write(u_short addr, u_char *data, int length)
 			msg.addr = pclient->addr;
 			msg.flags = 0;	//write
 			msg.len = (u16)length+WIMAX_EEPROM_ADDRLEN;
-			msg.buf = data_buffer;		
+			msg.buf = data_buffer;
 			rc = i2c_transfer(pclient->adapter, &msg, 1);
-			if (rc < 0) 
+			if (rc < 0)
 				return rc;
 			length-=len;
 			data+=len;
@@ -358,22 +383,83 @@ int wimax_i2c_read(u_short addr, u_char *data, int length)
 	msgs[1].len = length;
 	msgs[1].buf = data;
 	return i2c_transfer(pclient->adapter, msgs, 2);
-      
+
 }
+
+static ssize_t eeprom_show(struct device *dev,
+		struct device_attribute *attr, char *buf){
+	pr_debug("Writing boot & revision to wimax eeprom");
+
+	eeprom_write_boot();
+	eeprom_write_rev();
+
+	return 0;
+
+}
+
+static ssize_t eeprom_store(struct device *dev, 
+		struct device_attribute *attr, const char *buffer, size_t count) {
+
+	if (strncmp(buffer, "wb00", 4) == 0) {
+		pr_debug("Write EEPROM!!");
+		eeprom_write_boot();
+	} else if (strncmp(buffer, "rb00", 4) == 0) {
+		pr_debug("Read Boot!!");
+		eeprom_read_boot();
+	} else if (strncmp(buffer, "re00", 4) == 0) {
+		pr_debug("Read EEPROM!!");
+		eeprom_read_all();
+	} else if (strncmp(buffer, "ee00", 4) == 0) {
+		pr_debug("Erase EEPROM!!");
+		eeprom_erase_all();
+	} else if (strncmp(buffer, "rcal", 4) == 0) {
+		pr_debug("Check Cal!!");
+		eeprom_check_cal();
+	} else if (strncmp(buffer, "ecer", 4) == 0) {
+		pr_debug("Erase Cert!!");
+		eeprom_erase_cert();
+	} else if (strncmp(buffer, "rcer", 4) == 0) {
+		pr_debug("Check Cert!!");
+		eeprom_check_cert();
+	} else if (strncmp(buffer, "wrev", 4) == 0) {
+		pr_debug("Write Rev!!");
+		eeprom_write_rev();
+	} else 
+		pr_debug("Wrong option");
+
+	return count;
+}
+
+static DEVICE_ATTR(eeprom, 0664, eeprom_show, eeprom_store);
 
 int wmxeeprom_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
-	dump_debug("[WMXEEPROM]: probe");
-	
+	struct class *wimax_class;
+	struct device *dev_t;
+	int err;
+
+	pr_debug("[WMXEEPROM]: probe");
+
 	pclient = client;
+	wimax_class = class_create(THIS_MODULE, "wimax");
+	if (IS_ERR(wimax_class))
+		pr_err("%s: Class create failed", __func__);
+
+	dev_t = device_create(wimax_class, NULL, 0, "%s", "cmc732");
+	if (IS_ERR(dev_t))
+		pr_err("%s: Device create failed", __func__);
+
+	err = device_create_file(dev_t, &dev_attr_eeprom);
+	if (err < 0)
+		pr_err("%s: Device file create failed", __func__);
 
 	return 0;
 }
 
 int wmxeeprom_remove(struct i2c_client *client)
 {
-	dump_debug("[WMXEEPROM]: remvove");
-	
+	pr_debug("[WMXEEPROM]: remvove");
+
 	return 0;
 }
 
@@ -384,10 +470,10 @@ const struct i2c_device_id wmxeeprom_id[]={
 
 MODULE_DEVICE_TABLE(i2c, wmxeeprom_id);
 static struct i2c_driver wmxeeprom_driver = {
-	.probe 		= wmxeeprom_probe,
-	.remove 	= wmxeeprom_remove,
+	.probe		= wmxeeprom_probe,
+	.remove		= wmxeeprom_remove,
 	.id_table	= wmxeeprom_id,
-	.driver = {		
+	.driver = {
 		.name   = "wmxeeprom",
 	},
 };
@@ -410,10 +496,10 @@ int load_wimax_boot(void)
 	fp = klib_fopen(WIMAX_BOOTIMAGE_PATH, O_RDONLY, 0);
 
 	if (fp) {
-		dump_debug("LoadWiMAXBootImage ..");
+		pr_debug("LoadWiMAXBootImage ..");
 		g_wimax_image.data = (u_char *)vmalloc(MAX_WIMAXBOOTIMAGE_SIZE);
 		if (!g_wimax_image.data) {
-			dump_debug("Error: Memory alloc failure.");
+			pr_debug("Error: Memory alloc failure.");
 			klib_fclose(fp);
 			return -1;
 		}
@@ -427,7 +513,7 @@ int load_wimax_boot(void)
 
 		klib_fclose(fp);
 	} else {
-		dump_debug("Error: WiMAX image file open failed");
+		pr_debug("Error: WiMAX image file open failed");
 		return -1;
 	}
 
@@ -440,7 +526,7 @@ int write_rev(void)
 	int retry = 100;
 	int err;
 
-	dump_debug("HW REV: %d", system_rev);
+	pr_debug("HW REV: %d", system_rev);
 
 	/* swap */
 	val = be32_to_cpu(system_rev);
@@ -451,7 +537,7 @@ int write_rev(void)
 		}
 	while(err<0?((retry--)>0):0);
 	if(retry<0)
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 	return err ;
 }
 
@@ -468,7 +554,7 @@ void erase_cert(void)
 		}
 	while(err<0?((retry--)>0):0);
 	if(retry<0)
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 }
 
 int check_cert(void)
@@ -484,7 +570,7 @@ int check_cert(void)
 		}
 	while(err<0?((retry--)>0):0);
 	if(retry<0)
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 
 	dump_buffer("Certification", (u_char *)buf, (u_int)len);
 
@@ -509,7 +595,7 @@ int check_cal(void)
 		}
 	while(err<0?((retry--)>0):0);
 	if(retry<0)
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 
 	dump_buffer("Calibration", (u_char *)buf, (u_int)len);
 
@@ -536,7 +622,7 @@ void eeprom_read_boot()
 
 	buf = (char *)kmalloc(4096, GFP_KERNEL);
 	if (buf == NULL) {
-		dump_debug("eeprom_read_boot: MALLOC FAIL!!");
+		pr_debug("eeprom_read_boot: MALLOC FAIL!!");
 		return;
 	}
 
@@ -554,29 +640,29 @@ void eeprom_read_boot()
 
 			/* dump packets with checksum */
 			u_char  *b = (u_char *)buf;
-			dump_debug("EEPROM dump [0x%04x] = ", addr);
+			pr_debug("EEPROM dump [0x%04x] = ", addr);
 
 			for (i = 0; i < len; i++) {
 				checksum += b[i];
 				sprintf(chr, " %02x", b[i]);
 				strcat(print_buf, chr);
 				if (((i + 1) != len) && (i % 16 == 15)) {
-					dump_debug(print_buf);
+					pr_debug("%s", print_buf);
 					memset(print_buf, 0x0, 256);
 				}
 			}
-			dump_debug(print_buf);
+			pr_debug("%s", print_buf);
 		}
 		addr += len;
 	}
 
-	dump_debug("Checksum: 0x%08x", checksum);
+	pr_debug("Checksum: 0x%08x", checksum);
 
 	kfree(buf);
 
 	eeprom_poweroff();
 	if(retry<0)
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 }
 
 void eeprom_read_all()
@@ -594,7 +680,7 @@ void eeprom_read_all()
 	/* allocate 4K buffer */
 	buf = (char *)kmalloc(4096, GFP_KERNEL);
 	if (buf == NULL) {
-		dump_debug("eeprom_read_all: MALLOC FAIL!!");
+		pr_debug("eeprom_read_all: MALLOC FAIL!!");
 		return;
 	}
 
@@ -613,30 +699,30 @@ void eeprom_read_all()
 
 			/* dump packets with checksum */
 			u_char  *b = (u_char *)buf;
-			dump_debug("EEPROM dump [0x%04x] = ", addr);
+			pr_debug("EEPROM dump [0x%04x] = ", addr);
 
 			for (i = 0; i < len; i++) {
 				checksum += b[i];
 				sprintf(chr, " %02x", b[i]);
 				strcat(print_buf, chr);
 				if (((i + 1) != len) && (i % 16 == 15)) {
-					dump_debug(print_buf);
+					pr_debug("%s", print_buf);
 					memset(print_buf, 0x0, 256);
 				}
 			}
-			dump_debug(print_buf);
+			pr_debug("%s", print_buf);
 		}
 		addr += len;
 	}
 
-	dump_debug("Checksum: 0x%08x", checksum);
+	pr_debug("Checksum: 0x%08x", checksum);
 
 	/* free 4K buffer */
 	kfree(buf);
 
 	eeprom_poweroff();
 	if(retry<0)
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 }
 
 void eeprom_erase_all()
@@ -650,7 +736,7 @@ void eeprom_erase_all()
 
 	memset(buf, 0xff, 128);
 	for (i = 0; i < 512; i++) {	/* clear all EEPROM */
-		dump_debug("ERASE [0x%04x]\n", i * 128);
+		pr_debug("ERASE [0x%04x]\n", i * 128);
 		do
 			{
 			err = wimax_i2c_write(128 * i, buf, 128);
@@ -660,7 +746,7 @@ void eeprom_erase_all()
 
 	eeprom_poweroff();
 	if(retry<0)
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 }
 
 /* Write boot image to EEPROM */
@@ -668,12 +754,12 @@ int eeprom_write_boot(void)
 {
 	u_char	*buffer;
 	int retry = 1000;
-	int err;
+	int err = 0;
 	u_short	ucsize = MAX_BOOT_WRITE_LENGTH;
 
 	if (load_wimax_boot() < 0) {
-		dump_debug("ERROR READ WIMAX BOOT IMAGE");
-		return;
+		pr_debug("ERROR READ WIMAX BOOT IMAGE");
+		return -1;
 	}
 
 	eeprom_poweron();
@@ -711,15 +797,15 @@ int eeprom_write_boot(void)
 	eeprom_poweroff();
 
 	if (g_wimax_image.data) {
-		dump_debug("Delete the Image Loaded");
+		pr_debug("Delete the Image Loaded");
 		vfree(g_wimax_image.data);
 		g_wimax_image.data = NULL;
 	}
 	if(retry<0)
 		{
-		dump_debug("eeprom error");
+		pr_debug("eeprom error");
 	}else{
-	dump_debug("EEPROM WRITING DONE.");
+	pr_debug("EEPROM WRITING DONE.");
 }
 	return err;
 }
@@ -732,7 +818,7 @@ int eeprom_write_rev(void)
 	ret = write_rev();	/* write hw rev to eeprom */
 	eeprom_poweroff();
 
-	dump_debug("REV WRITING DONE.");
+	pr_debug("REV WRITING DONE.");
 	return ret;
 }
 
@@ -742,7 +828,7 @@ void eeprom_erase_cert(void)
 	erase_cert();
 	eeprom_poweroff();
 
-	dump_debug("ERASE CERT DONE.");
+	pr_debug("ERASE CERT DONE.");
 }
 
 int eeprom_check_cert(void)
@@ -753,7 +839,7 @@ int eeprom_check_cert(void)
 	ret = check_cert();	/* check cert */
 	eeprom_poweroff();
 
-	dump_debug("CHECK CERT DONE. (ret: %d)", ret);
+	pr_debug("CHECK CERT DONE. (ret: %d)", ret);
 
 	return ret;
 }
@@ -766,7 +852,8 @@ int eeprom_check_cal(void)
 	ret = check_cal();	/* check cal */
 	eeprom_poweroff();
 
-	dump_debug("CHECK CAL DONE. (ret: %d)", ret);
+	pr_debug("CHECK CAL DONE. (ret: %d)", ret);
 
 	return ret;
 }
+

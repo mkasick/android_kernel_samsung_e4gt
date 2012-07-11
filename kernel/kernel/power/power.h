@@ -14,6 +14,10 @@ struct swsusp_info {
 } __attribute__((aligned(PAGE_SIZE)));
 
 #ifdef CONFIG_HIBERNATION
+/* kernel/power/snapshot.c */
+extern void __init hibernate_reserved_size_init(void);
+extern void __init hibernate_image_size_init(void);
+
 #ifdef CONFIG_ARCH_HIBERNATION_HEADER
 /* Maximum size of architecture specific data in a hibernation header */
 #define MAX_ARCH_HEADER_SIZE	(sizeof(struct new_utsname) + 4)
@@ -49,7 +53,12 @@ static inline char *check_image_kernel(struct swsusp_info *info)
 extern int hibernation_snapshot(int platform_mode);
 extern int hibernation_restore(int platform_mode);
 extern int hibernation_platform_enter(void);
-#endif
+
+#else /* !CONFIG_HIBERNATION */
+
+static inline void hibernate_reserved_size_init(void) {}
+static inline void hibernate_image_size_init(void) {}
+#endif /* !CONFIG_HIBERNATION */
 
 extern int pfn_is_nosave(unsigned long);
 
@@ -65,6 +74,8 @@ static struct kobj_attribute _name##_attr = {	\
 
 /* Preferred image size in bytes (default 500 MB) */
 extern unsigned long image_size;
+/* Size of memory reserved for drivers (default SPARE_PAGES x PAGE_SIZE) */
+extern unsigned long reserved_size;
 extern int in_suspend;
 extern dev_t swsusp_resume_device;
 extern sector_t swsusp_resume_block;
@@ -134,6 +145,7 @@ extern int swsusp_swap_in_use(void);
  * the image header.
  */
 #define SF_PLATFORM_MODE	1
+#define SF_NOCOMPRESS_MODE	2
 
 /* kernel/power/hibernate.c */
 extern int swsusp_check(void);
@@ -257,3 +269,13 @@ ssize_t  wake_unlock_store(struct kobject *kobj, struct kobj_attribute *attr,
 void request_suspend_state(suspend_state_t state);
 suspend_state_t get_suspend_state(void);
 #endif
+
+struct pm_wd_data {
+	struct task_struct *tsk;
+	int timeout;
+};
+static inline void pm_wd_timeout(unsigned long data) { }
+static inline void pm_wd_add_timer(struct timer_list *timer,
+				struct pm_wd_data *data, int timeout) { }
+static inline void pm_wd_del_timer(struct timer_list *timer) { }
+

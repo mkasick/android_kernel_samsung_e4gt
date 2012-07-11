@@ -1,4 +1,5 @@
-/* Copyright (C) 2008 Samsung Electronics, Inc.
+/*
+ * Copyright (C) 2008 Samsung Electronics, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -12,6 +13,9 @@
  */
 #include <linux/miscdevice.h>
 #include <linux/wakelock.h>
+#include <linux/notifier.h>
+#include <linux/mutex.h>
+#include <asm/byteorder.h>
 
 #ifndef __WIMAX_CMC732_H
 #define __WIMAX_CMC732_H
@@ -20,7 +24,7 @@
 
 #define WIMAX_POWER_SUCCESS             0
 #define WIMAX_ALREADY_POWER_ON          -1
-#define WIMAX_PROBE_FAIL                -2
+#define WIMAX_POWER_FAIL		-2
 #define WIMAX_ALREADY_POWER_OFF         -3
 
 /* wimax mode */
@@ -32,6 +36,14 @@ enum {
         DM_MODE,
         USB_MODE,
         AUTH_MODE
+};
+
+/* wimax power state */
+enum {
+	CMC_POWER_OFF = 0,
+	CMC_POWER_ON,
+	CMC_POWERING_OFF,
+	CMC_POWERING_ON
 };
 
 /* wimax state */
@@ -47,44 +59,33 @@ enum {
 };
 
 struct wimax_cfg{
-	int                     uart_sel;
-        int                     uart_sel1;
-        int                     temp_tgid;      /* handles unexpected close */
-        struct wake_lock        wimax_wake_lock;        /* resume wake lock */
-        struct wake_lock        wimax_rxtx_lock;/* sdio wake lock */
-        struct wake_lock        wimax_tx_lock;/* sdio tx lock */
-	struct mutex		poweroff_mutex; /*To avoid executing poweroff simultaneously*/
-	u_char          enable_dump_msg;
-        u8              wimax_status;
+	struct wake_lock	wimax_driver_lock;	/* resume wake lock */
+	struct mutex power_mutex; /*serialize power on/off*/
+	struct mutex suspend_mutex;
+	struct work_struct		shutdown;
+	struct wimax732_platform_data *pdata;
+	struct notifier_block pm_notifier;
+	u8		power_state;
         u8              wimax_mode;/* wimax mode (SDIO, USB, etc..) */
-        u8              sleep_mode;/* suspend mode (0: VI, 1: IDLE) */
-        u8              card_removed;/*
-                                                 * set if host has acknowledged
-                                                 * card removal
-                                                 */
-	u8		powerup_done;
-	int		modem_reset_flag;
 };
 
 struct wimax732_platform_data {
-	struct class *wimax_class; 
         int (*power) (int);
+	void (*detect) (int);
         void (*set_mode) (void);
         void (*signal_ap_active) (int);
         int (*get_sleep_mode) (void);
         int (*is_modem_awake) (void);
         void (*wakeup_assert) (int);
-	void (*uart_wimax)(void); 
-	void (*uart_ap)(void); 
-	void (*restore_uart_path)(void);
-	void (*gpio_display) (void);
         struct wimax_cfg *g_cfg;
         struct miscdevice swmxctl_dev;
         int wimax_int;
-	struct notifier_block pm_notifier;
+	void *adapter_data;
+	void (*restore_uart_path) (void);
+	int uart_sel;
+	int uart_sel1;
 };
 
 #endif
 
 #endif
-

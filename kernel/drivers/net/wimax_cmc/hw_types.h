@@ -18,7 +18,7 @@
 #define SDIO_MAX_BYTE_SIZE			511	/* maximum size in byte mode */
 #define SDIO_BUFFER_SIZE			SDIO_MAX_BLOCK_SIZE
 /*
-  *We need the HEADER_MANIPULATION_OFFSET because 
+  *We need the HEADER_MANIPULATION_OFFSET because
   *we now use only one buffer while receiving data.
   *since the ehternet header is larger than the hardware packet header,
   *we need to keep some space at the beginning of the buffer to accomodate the
@@ -31,16 +31,16 @@
 #define SDIO_INT_STATUS_REG		0xC0
 #define SDIO_INT_STATUS_CLR_REG	0xC4
 
-#define SDIO_C2H_WP_REG			0xE4	
-#define SDIO_C2H_RP_REG			0xE8	
-#define SDIO_H2C_WP_REG			0xEC	
-#define SDIO_H2C_RP_REG			0xF0	
+#define SDIO_C2H_WP_REG			0xE4
+#define SDIO_C2H_RP_REG			0xE8
+#define SDIO_H2C_WP_REG			0xEC
+#define SDIO_H2C_RP_REG			0xF0
 
 /* SDIO function registers */
 #define SDIO_INT_DATA_READY			0x01
 #define SDIO_INT_ERROR				0x02
 
-#define WAKEUP_MAX_TRY   			20
+#define WAKEUP_MAX_TRY				20
 #define WAKEUP_TIMEOUT				300
 #define CONTROL_PACKET				1
 #define DATA_PACKET				0
@@ -88,7 +88,7 @@ struct wimax_msg_header {
 };
 
 struct hardware_info {
-	void 			*receive_buffer;
+	void			*receive_buffer;
 	u_char		eth_header[ETHERNET_ADDRESS_LENGTH * 2];	/* ethernet header */
 	struct queue_info	q_send;					/* send pending queue */
 };

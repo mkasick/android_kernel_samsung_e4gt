@@ -35,7 +35,7 @@
 	at some future time.
 
 	The DMA module must be started before it can be used.  It is
-	started by calling CyAsDmaStart().  This function intializes
+	started by calling CyAsDmaStart().  This function initializes
 	all of the endpoint data structures.
 
 	In order to perform DMA on a particular endpoint, the endpoint
@@ -91,7 +91,7 @@ typedef enum cy_as_dma_direction {
 	cy_as_direction_in_out = 2,
 	/* Do no change the endpoint type */
 	cy_as_direction_dont_change = 3
-} cy_as_dma_direction ;
+} cy_as_dma_direction;
 
 /*********************************
  * West Bridge Functions
@@ -108,7 +108,7 @@ typedef enum cy_as_dma_direction {
    completes a requested DMA operation.
 
    Returns
-   CY_AS_ERROR_SUCCESS - the module initialized sucessfully
+   CY_AS_ERROR_SUCCESS - the module initialized successfully
    CY_AS_ERROR_OUT_OF_MEMORY - memory allocation failed during
 		initialization
    CY_AS_ERROR_ALREADY_RUNNING - the DMA module was already running
@@ -120,7 +120,7 @@ extern cy_as_return_status_t
 cy_as_dma_start(
 	/* The device to start */
 	cy_as_device *dev_p
-	) ;
+	);
 
 /* Summary
    Shutdown the DMA module
@@ -131,7 +131,7 @@ cy_as_dma_start(
    then freeing the resources associated with each DMA endpoint.
 
    Returns
-   CY_AS_ERROR_SUCCESS - the module shutdown sucessfully
+   CY_AS_ERROR_SUCCESS - the module shutdown successfully
    CY_AS_ERROR_NOT_RUNNING - the DMA module was not running
 
    See Also
@@ -142,7 +142,7 @@ extern cy_as_return_status_t
 cy_as_dma_stop(
 	/* The device to stop */
 	cy_as_device *dev_p
-	) ;
+	);
 
 /* Summary
    This function cancels all outstanding DMA requests on a given endpoint
@@ -161,7 +161,7 @@ cy_as_dma_stop(
 
    Returns
    CY_AS_ERROR_SUCCESS - the traffic on the endpoint is canceled
-	sucessfully
+	successfully
 
    See Also
 */
@@ -172,7 +172,7 @@ cy_as_dma_cancel(
 	/* The endpoint to cancel */
 	cy_as_end_point_number_t ep,
 	cy_as_return_status_t err
-	) ;
+	);
 
 /* Summary
    This function enables a single endpoint for DMA operations
@@ -201,7 +201,7 @@ cy_as_dma_enable_end_point(
 	cy_bool	enable,
 	/* The direction of the endpoint */
 	cy_as_dma_direction	dir
-) ;
+);
 
 /* Summary
    This function queue a DMA request for a given endpoint
@@ -246,7 +246,7 @@ cy_as_dma_queue_request(
 	/* The callback to call when the DMA request is complete,
 	 * either successfully or via an error */
 	cy_as_dma_callback cb
-	) ;
+	);
 
 /* Summary
    This function waits until all DMA requests on a given endpoint
@@ -266,7 +266,7 @@ cy_as_dma_queue_request(
    will have to maintain a list of sleep channels to wake.
 
    Returns
-   * CY_AS_ERROR_SUCCESS - the queue has drained sucessfully
+   * CY_AS_ERROR_SUCCESS - the queue has drained successfully
    * CY_AS_ERROR_INVALID_ENDPOINT - the endpoint given is not valid
    * CY_AS_ERROR_NESTED_SLEEP - CyAsDmaQueueRequest() was requested
    *	on an endpoint where CyAsDmaQueueRequest was already called
@@ -280,7 +280,7 @@ cy_as_dma_drain_queue(
 	/* If CyTrue, call kickstart to start the DMA process,
 	if cy_false, west bridge will start the DMA process */
 	cy_bool kickstart
-	) ;
+	);
 
 /* Summary
    Sets the maximum amount of data West Bridge can accept in a single
@@ -295,7 +295,7 @@ cy_as_dma_drain_queue(
    CyAsHalDmaSetupRead() functoins.
 
    Returns
-   * CY_AS_ERROR_SUCCESS - the value was set sucessfully
+   * CY_AS_ERROR_SUCCESS - the value was set successfully
    * CY_AS_ERROR_INVALID_SIZE - the size value was not valid
 */
 extern cy_as_return_status_t
@@ -306,7 +306,7 @@ cy_as_dma_set_max_dma_size(
 	cy_as_end_point_number_t ep,
 	/* The max size of this endpoint in bytes */
 	uint32_t size
-	) ;
+	);
 
 /* Summary
    This function starts the DMA process on a given channel.
@@ -326,7 +326,7 @@ cy_as_dma_kick_start(
 	cy_as_device *dev_p,
 	/* The endpoint to change */
 	cy_as_end_point_number_t ep
-	) ;
+	);
 
 /* Summary
    This function receives endpoint data from a request.
@@ -368,7 +368,7 @@ cy_as_dma_completed_callback(
 	uint32_t			 length,
 	/* Status of DMA operation. */
 	cy_as_return_status_t   status
-	) ;
+	);
 
 #include "cyas_cplus_end.h"
 

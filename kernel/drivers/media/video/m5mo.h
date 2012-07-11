@@ -65,6 +65,14 @@ enum m5mo_prev_frmsize {
 	M5MO_PREVIEW_D1,
 	M5MO_PREVIEW_WVGA,
 	M5MO_PREVIEW_720P,
+#if defined(CONFIG_MACH_Q1_BD)
+	M5MO_PREVIEW_880_720,
+	M5MO_PREVIEW_1200_800,
+	M5MO_PREVIEW_1280_800,
+	M5MO_PREVIEW_1280_768,
+	M5MO_PREVIEW_1072_800,
+	M5MO_PREVIEW_980_800,
+#endif
 	M5MO_PREVIEW_1080P,
 	M5MO_PREVIEW_HDR,
 };
@@ -145,6 +153,7 @@ struct m5mo_exif {
 
 struct m5mo_state {
 	struct m5mo_platform_data *pdata;
+	struct device *m5mo_dev;
 	struct v4l2_subdev sd;
 
 	struct wake_lock wake_lock;
@@ -176,6 +185,7 @@ struct m5mo_state {
 	unsigned int face_beauty:1;
 	unsigned int recording:1;
 	unsigned int check_dataline:1;
+	int anti_banding;
 };
 
 /* Category */

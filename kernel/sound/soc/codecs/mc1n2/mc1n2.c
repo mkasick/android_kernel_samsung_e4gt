@@ -1,7 +1,7 @@
 /*
  * MC-1N2 ASoC codec driver
  *
- * Copyright (c) 2010 Yamaha Corporation
+ * Copyright (c) 2010-2011 Yamaha Corporation
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -22,13 +22,13 @@
 
 #include <linux/delay.h>
 #include <linux/errno.h>
+#include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/types.h>
-#include <linux/slab.h>
 #include <sound/hwdep.h>
 #include <sound/initval.h>
 #include <sound/pcm.h>
@@ -38,42 +38,27 @@
 #include <sound/tlv.h>
 #include "mc1n2.h"
 #include "mc1n2_priv.h"
-#include "mcdevif.h"
-#include "mcdefs.h"
-#include "mcpacking.h"
-
-#ifdef CONFIG_TARGET_LOCALE_NAATT
-#include "mc1n2_cfg_gsm.h"
-#elif defined(CONFIG_MACH_P6_REV00) || defined(CONFIG_MACH_P6_REV02)
-#include "mc1n2_cfg_q1.h"
-#else
-#include "mc1n2_cfg.h"
-#endif
 
 #include <plat/gpio-cfg.h>
 #include <mach/gpio.h>
 
-#ifdef CONFIG_SND_SOC_MIC_A1026
-
-#define CLOSETALK	0
-#define FARTALK		1
-#define BYPASSMODE	3
-#define NS0		4
-
-extern int a1026_i2c_drv_init(void);
-
-extern void a1026Wakeup(void);
-extern void a1026Sleep(void);
-extern int a1026_dev_powerup(void);
-extern int a1026_dev_powerdown(void);
-extern void a1026SetFeature(unsigned int feature);
-
-#endif	/* #ifdef CONFIG_SND_SOC_MIC_A1026 */
+#ifdef CONFIG_TARGET_LOCALE_NAATT_TEMP
+/* CONFIG_TARGET_LOCALE_NAATT_TEMP is intentionally introduced temporarily*/
+#include "mc1n2_cfg_gsm.h"
+#elif defined(CONFIG_MACH_Q1_BD)
+#include "mc1n2_cfg_q1.h"
+#elif defined(CONFIG_MACH_U1_KOR_LGT)
+#include "mc1n2_cfg_lgt.h"
+#elif defined(CONFIG_MACH_PX)
+#include "mc1n2_cfg_px.h"
+#else
+#include "mc1n2_cfg.h"
+#endif
 
 extern int mc1n2_set_mclk_source(bool on);
 static int audio_ctrl_mic_bias_gpio(struct mc1n2_platform_data *pdata, int mic, bool on);
 
-#define MC1N2_DRIVER_VERSION "1.0.1"
+#define MC1N2_DRIVER_VERSION "1.0.4"
 
 #define MC1N2_NAME "mc1n2"
 
@@ -92,6 +77,12 @@ static int audio_ctrl_mic_bias_gpio(struct mc1n2_platform_data *pdata, int mic, 
 
 #define MC1N2_HW_ID_AA 0x78
 #define MC1N2_HW_ID_AB 0x79
+
+#define MC1N2_WAITTIME_MICIN	100
+
+#ifdef ALSA_VER_ANDROID_3_0
+static struct i2c_client *mc1n2_i2c;
+#endif
 
 /*
  * Driver private data structure
@@ -156,19 +147,8 @@ struct mc1n2_data {
 	MCDRV_AE_INFO ae_store;
 	MCDRV_PDM_INFO pdm_store;
 	UINT32 hdmicount;
+	UINT32 delay_mic1in;
 };
-
-#define mc1n2_is_in_playback(p) ((p)->stream & (1 << SNDRV_PCM_STREAM_PLAYBACK))
-#define mc1n2_is_in_capture(p)  ((p)->stream & (1 << SNDRV_PCM_STREAM_CAPTURE))
-
-static int mc1n2_current_mode;
-
-static struct snd_soc_codec *mc1n2_codec;
-
-static struct snd_soc_codec *mc1n2_get_codec_data(void)
-{
-	return mc1n2_codec;
-}
 
 struct mc1n2_info_store {
 	UINT32 get;
@@ -201,17 +181,36 @@ struct mc1n2_info_store mc1n2_info_store_tbl[] = {
 };
 #define MC1N2_N_INFO_STORE (sizeof(mc1n2_info_store_tbl) / sizeof(struct mc1n2_info_store))
 
-int isVoiceSearch = 0;
+#define mc1n2_is_in_playback(p) ((p)->stream & (1 << SNDRV_PCM_STREAM_PLAYBACK))
+#define mc1n2_is_in_capture(p)  ((p)->stream & (1 << SNDRV_PCM_STREAM_CAPTURE))
+#define get_port_id(id) (id-1)
+
+static int mc1n2_current_mode;
+
+#ifndef ALSA_VER_ANDROID_3_0
+static struct snd_soc_codec *mc1n2_codec;
+#endif
+
+#ifndef ALSA_VER_ANDROID_3_0
+static struct snd_soc_codec *mc1n2_get_codec_data(void)
+{
+	return mc1n2_codec;
+}
 
 static void mc1n2_set_codec_data(struct snd_soc_codec *codec)
 {
 	mc1n2_codec = codec;
 }
+#endif
 
 /* deliver i2c access to machdep */
 struct i2c_client *mc1n2_get_i2c_client(void)
 {
+#ifdef ALSA_VER_ANDROID_3_0
+	return mc1n2_i2c;
+#else
 	return mc1n2_codec->control_data;
+#endif
 }
 
 static int audio_ctrl_mic_bias_gpio(struct mc1n2_platform_data *pdata, int mic, bool on)
@@ -521,8 +520,12 @@ static int mc1n2_set_fmt_common(struct mc1n2_port_params *port, unsigned int fmt
 static int mc1n2_i2s_set_clkdiv(struct snd_soc_dai *dai, int div_id, int div)
 {
 	struct snd_soc_codec *codec = dai->codec;
-	struct mc1n2_data *mc1n2 = codec->drvdata;
-	struct mc1n2_port_params *port = &mc1n2->port[dai->id];
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+	struct mc1n2_port_params *port = &mc1n2->port[get_port_id(dai->id)];
 
 	switch (div_id) {
 	case MC1N2_BCLK_MULT:
@@ -550,8 +553,12 @@ static int mc1n2_i2s_set_clkdiv(struct snd_soc_dai *dai, int div_id, int div)
 static int mc1n2_i2s_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
 	struct snd_soc_codec *codec = dai->codec;
-	struct mc1n2_data *mc1n2 = codec->drvdata;
-	struct mc1n2_port_params *port = &mc1n2->port[dai->id];
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+	struct mc1n2_port_params *port = &mc1n2->port[get_port_id(dai->id)];
 
 	/* format */
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
@@ -575,20 +582,28 @@ static int mc1n2_i2s_hw_params(struct snd_pcm_substream *substream,
 			       struct snd_pcm_hw_params *params,
 			       struct snd_soc_dai *dai)
 {
+#ifdef ALSA_VER_ANDROID_3_0
+	struct snd_soc_codec *codec = dai->codec;
+#else
 	struct snd_soc_pcm_runtime *runtime = snd_pcm_substream_chip(substream);
 #ifdef ALSA_VER_1_0_19
 	struct snd_soc_codec *codec = runtime->socdev->codec;
 #else
 	struct snd_soc_codec *codec = runtime->socdev->card->codec;
 #endif
-	struct mc1n2_data *mc1n2 = codec->drvdata;
-	struct mc1n2_port_params *port = &mc1n2->port[dai->id];
+#endif
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+	struct mc1n2_port_params *port = &mc1n2->port[get_port_id(dai->id)];
 	int dir = substream->stream;
 	int rate;
 	int err = 0;
 
 	dbg_info("hw_params: [%d] name=%s, dir=%d, rate=%d, bits=%d, ch=%d\n",
-		 dai->id, substream->name, dir,
+		 get_port_id(dai->id), substream->name, dir,
 		 params_rate(params), params_format(params), params_channels(params));
 
 	/* format (bits) */
@@ -640,8 +655,8 @@ static int mc1n2_i2s_hw_params(struct snd_pcm_substream *substream,
 		goto error;
 	}
 
-#ifdef CONFIG_SND_S5P_RP
-	if ((dir == SNDRV_PCM_STREAM_PLAYBACK) && (dai->id == 0)
+#ifdef CONFIG_SND_SAMSUNG_RP
+	if ((dir == SNDRV_PCM_STREAM_PLAYBACK) && (get_port_id(dai->id) == 0)
 		&& (port->stream & (1 << dir)) && (rate == port->rate)) {
 		/* During ULP Audio, DAI should not be touched
 		   if i2s port already opened. */
@@ -660,7 +675,7 @@ static int mc1n2_i2s_hw_params(struct snd_pcm_substream *substream,
 		goto error;
 	}
 
-	err = mc1n2_setup_dai(mc1n2, dai->id, MCDRV_DIO_DA, dir);
+	err = mc1n2_setup_dai(mc1n2, get_port_id(dai->id), MCDRV_DIO_DA, dir);
 	if (err != MCDRV_SUCCESS) {
 		dev_err(codec->dev, "%d: Error in mc1n2_setup_dai\n", err);
 		err = -EIO;
@@ -668,9 +683,9 @@ static int mc1n2_i2s_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	if (dir == SNDRV_PCM_STREAM_PLAYBACK) {
-		err = mc1n2_control_dir(mc1n2, dai->id, 1);
+		err = mc1n2_control_dir(mc1n2, get_port_id(dai->id), 1);
 	} else {
-		err = mc1n2_control_dit(mc1n2, dai->id, 1);
+		err = mc1n2_control_dit(mc1n2, get_port_id(dai->id), 1);
 	}
 	if (err != MCDRV_SUCCESS) {
 		dev_err(codec->dev, "%d: Error in mc1n2_control_dir/dit\n", err);
@@ -689,14 +704,22 @@ error:
 static int mc1n2_hw_free(struct snd_pcm_substream *substream,
 			 struct snd_soc_dai *dai)
 {
+#ifdef ALSA_VER_ANDROID_3_0
+	struct snd_soc_codec *codec = dai->codec;
+#else
 	struct snd_soc_pcm_runtime *runtime = snd_pcm_substream_chip(substream);
 #ifdef ALSA_VER_1_0_19
 	struct snd_soc_codec *codec = runtime->socdev->codec;
 #else
 	struct snd_soc_codec *codec = runtime->socdev->card->codec;
 #endif
-	struct mc1n2_data *mc1n2 = codec->drvdata;
-	struct mc1n2_port_params *port = &mc1n2->port[dai->id];
+#endif
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+	struct mc1n2_port_params *port = &mc1n2->port[get_port_id(dai->id)];
 	int dir = substream->stream;
 	int err;
 
@@ -707,8 +730,8 @@ static int mc1n2_hw_free(struct snd_pcm_substream *substream,
 		goto error;
 	}
 
-#ifdef CONFIG_SND_S5P_RP
-	if ((dir == SNDRV_PCM_STREAM_PLAYBACK) && (dai->id == 0)) {
+#ifdef CONFIG_SND_SAMSUNG_RP
+	if ((dir == SNDRV_PCM_STREAM_PLAYBACK) && (get_port_id(dai->id) == 0)) {
 		/* Leave codec opened during ULP Audio */
 		err = 0;
 		goto error;
@@ -716,9 +739,9 @@ static int mc1n2_hw_free(struct snd_pcm_substream *substream,
 #endif
 
 	if (dir == SNDRV_PCM_STREAM_PLAYBACK) {
-		err = mc1n2_control_dir(mc1n2, dai->id, 0);
+		err = mc1n2_control_dir(mc1n2, get_port_id(dai->id), 0);
 	} else {
-		err = mc1n2_control_dit(mc1n2, dai->id, 0);
+		err = mc1n2_control_dit(mc1n2, get_port_id(dai->id), 0);
 	}
 	if (err != MCDRV_SUCCESS) {
 		dev_err(codec->dev, "%d: Error in mc1n2_control_dir/dit\n", err);
@@ -737,8 +760,12 @@ error:
 static int mc1n2_pcm_set_clkdiv(struct snd_soc_dai *dai, int div_id, int div)
 {
 	struct snd_soc_codec *codec = dai->codec;
-	struct mc1n2_data *mc1n2 = codec->drvdata;
-	struct mc1n2_port_params *port = &mc1n2->port[dai->id];
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+	struct mc1n2_port_params *port = &mc1n2->port[get_port_id(dai->id)];
 
 	switch (div_id) {
 	case MC1N2_BCLK_MULT:
@@ -791,8 +818,12 @@ static int mc1n2_pcm_set_clkdiv(struct snd_soc_dai *dai, int div_id, int div)
 static int mc1n2_pcm_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
 	struct snd_soc_codec *codec = dai->codec;
-	struct mc1n2_data *mc1n2 = codec->drvdata;
-	struct mc1n2_port_params *port = &mc1n2->port[dai->id];
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+	struct mc1n2_port_params *port = &mc1n2->port[get_port_id(dai->id)];
 
 	/* format */
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
@@ -813,20 +844,28 @@ static int mc1n2_pcm_hw_params(struct snd_pcm_substream *substream,
 			       struct snd_pcm_hw_params *params,
 			       struct snd_soc_dai *dai)
 {
+#ifdef ALSA_VER_ANDROID_3_0
+	struct snd_soc_codec *codec = dai->codec;
+#else
 	struct snd_soc_pcm_runtime *runtime = snd_pcm_substream_chip(substream);
 #ifdef ALSA_VER_1_0_19
 	struct snd_soc_codec *codec = runtime->socdev->codec;
 #else
 	struct snd_soc_codec *codec = runtime->socdev->card->codec;
 #endif
-	struct mc1n2_data *mc1n2 = codec->drvdata;
-	struct mc1n2_port_params *port = &mc1n2->port[dai->id];
+#endif
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+	struct mc1n2_port_params *port = &mc1n2->port[get_port_id(dai->id)];
 	int dir = substream->stream;
 	int rate;
 	int err;
 
 	dbg_info("hw_params: [%d] name=%s, dir=%d, rate=%d, bits=%d, ch=%d\n",
-		 dai->id, substream->name, dir,
+		 get_port_id(dai->id), substream->name, dir,
 		 params_rate(params), params_format(params), params_channels(params));
 
 	/* channels */
@@ -901,7 +940,7 @@ static int mc1n2_pcm_hw_params(struct snd_pcm_substream *substream,
 		goto error;
 	}
 
-	err = mc1n2_setup_dai(mc1n2, dai->id, MCDRV_DIO_PCM, dir);
+	err = mc1n2_setup_dai(mc1n2, get_port_id(dai->id), MCDRV_DIO_PCM, dir);
 	if (err != MCDRV_SUCCESS) {
 		dev_err(codec->dev, "%d: Error in mc1n2_setup_dai\n", err);
 		err = -EIO;
@@ -909,9 +948,9 @@ static int mc1n2_pcm_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	if (dir == SNDRV_PCM_STREAM_PLAYBACK) {
-		err = mc1n2_control_dir(mc1n2, dai->id, 1);
+		err = mc1n2_control_dir(mc1n2, get_port_id(dai->id), 1);
 	} else {
-		err = mc1n2_control_dit(mc1n2, dai->id, 1);
+		err = mc1n2_control_dit(mc1n2, get_port_id(dai->id), 1);
 	}
 	if (err != MCDRV_SUCCESS) {
 		dev_err(codec->dev, "%d: Error in mc1n2_control_dir/dit\n", err);
@@ -968,10 +1007,15 @@ static struct snd_soc_dai_ops mc1n2_dai_ops[] = {
 };
 #endif
 
+
+#ifdef ALSA_VER_ANDROID_3_0
+struct snd_soc_dai_driver mc1n2_dai[] = {
+#else
 struct snd_soc_dai mc1n2_dai[] = {
+#endif
 	{
-		.name = MC1N2_NAME "-da0",
-		.id = 0,
+		.name = MC1N2_NAME "-da0i",
+		.id = 1,
 		.playback = {
 			.stream_name = "Playback",
 			.channels_min = 1,
@@ -998,8 +1042,8 @@ struct snd_soc_dai mc1n2_dai[] = {
 #endif
 	},
 	{
-		.name = MC1N2_NAME "-da0",
-		.id = 0,
+		.name = MC1N2_NAME "-da0p",
+		.id = 1,
 		.playback = {
 			.stream_name = "Playback",
 			.channels_min = 1,
@@ -1026,8 +1070,8 @@ struct snd_soc_dai mc1n2_dai[] = {
 #endif
 	},
 	{
-		.name = MC1N2_NAME "-da1",
-		.id = 1,
+		.name = MC1N2_NAME "-da1i",
+		.id = 2,
 		.playback = {
 			.stream_name = "Playback",
 			.channels_min = 1,
@@ -1054,8 +1098,8 @@ struct snd_soc_dai mc1n2_dai[] = {
 #endif
 	},
 	{
-		.name = MC1N2_NAME "-da1",
-		.id = 1,
+		.name = MC1N2_NAME "-da1p",
+		.id = 2,
 		.playback = {
 			.stream_name = "Playback",
 			.channels_min = 1,
@@ -1082,8 +1126,8 @@ struct snd_soc_dai mc1n2_dai[] = {
 #endif
 	},
 	{
-		.name = MC1N2_NAME "-da2",
-		.id = 2,
+		.name = MC1N2_NAME "-da2i",
+		.id = 3,
 		.playback = {
 			.stream_name = "Playback",
 			.channels_min = 1,
@@ -1110,8 +1154,8 @@ struct snd_soc_dai mc1n2_dai[] = {
 #endif
 	},
 	{
-		.name = MC1N2_NAME "-da2",
-		.id = 2,
+		.name = MC1N2_NAME "-da2p",
+		.id = 3,
 		.playback = {
 			.stream_name = "Playback",
 			.channels_min = 1,
@@ -1138,7 +1182,9 @@ struct snd_soc_dai mc1n2_dai[] = {
 #endif
 	},
 };
+#ifndef ALSA_VER_ANDROID_3_0
 EXPORT_SYMBOL_GPL(mc1n2_dai);
+#endif
 
 /*
  * Control interface
@@ -1252,26 +1298,69 @@ struct mc1n2_vreg_info mc1n2_vreg_map[MC1N2_N_VOL_REG] = {
 	{offsetof(MCDRV_VOL_INFO, aswA_HpGain),    mc1n2_vol_hpgain},
 };
 
+#ifdef ALSA_VER_ANDROID_3_0
+static int cache_read(struct snd_soc_codec *codec, unsigned int reg)
+{
+	int ret;
+	unsigned int val;
+
+	ret = snd_soc_cache_read(codec, reg, &val);
+	if (ret != 0) {
+		dev_err(codec->dev, "Cache read to %x failed: %d\n", reg, ret);
+		return -EIO;
+	}
+	return val;
+}
+static int cache_write(struct snd_soc_codec *codec,
+					   unsigned int reg, unsigned int value)
+{
+	return ((int)snd_soc_cache_write(codec, reg, value));
+}
+#else
+static int cache_read(struct snd_soc_codec *codec, unsigned int reg)
+{
+	return ((u16 *)codec->reg_cache)[reg];
+}
+static int cache_write(struct snd_soc_codec *codec,
+					   unsigned int reg, unsigned int value)
+{
+	u16 *cp = (u16 *)codec->reg_cache + reg;
+	*cp = value;
+	return 0;
+}
+#endif
+
 static unsigned int mc1n2_read_reg(struct snd_soc_codec *codec, unsigned int reg)
 {
-        return ((u16 *)codec->reg_cache)[reg];
+	int ret;
+
+	ret = cache_read(codec, reg);
+	if (ret < 0) {
+		return -EIO;
+	}
+	return (unsigned int)ret;
 }
+
+#ifdef ALSA_VER_ANDROID_3_0
+#define REG_CACHE_READ(reg)	(mc1n2_read_reg(codec, reg))
+#else
+#define REG_CACHE_READ(reg)	((u16 *)codec->reg_cache)[reg]
+#endif
 
 static int write_reg_vol(struct snd_soc_codec *codec,
 			   unsigned int reg, unsigned int value)
 {
 	MCDRV_VOL_INFO update;
 	SINT16 *vp;
-	u16 *cp;
+	int ret;
 	int err, i;
 
 	memset(&update, 0, sizeof(MCDRV_VOL_INFO));
 	vp = (SINT16 *)((void *)&update + mc1n2_vreg_map[reg].offset);
-	cp = (u16 *)codec->reg_cache + reg;
 
 	for (i = 0; i < 2; i++, vp++) {
 		unsigned int v = (value >> (i*8)) & 0xff;
-		unsigned int c = (*cp >> (i*8)) & 0xff;
+		unsigned int c = (mc1n2_read_reg(codec, reg) >> (i*8)) & 0xff;
 		if (v != c) {
 			int sw, vol;
 			SINT16 db;
@@ -1287,7 +1376,10 @@ static int write_reg_vol(struct snd_soc_codec *codec,
 		dev_err(codec->dev, "%d: Error in MCDRV_SET_VOLUME\n", err);
 		return -EIO;
 	}
-	*cp = value;
+	ret = cache_write(codec, reg, value);
+	if (ret != 0) {
+		dev_err(codec->dev, "Cache write to %x failed: %d\n", reg, ret);
+	}
 
 	return 0;
 }
@@ -1301,15 +1393,15 @@ static int write_reg_path(struct snd_soc_codec *codec,
 	MCDRV_PATH_INFO update;
 	MCDRV_CHANNEL *pch;
 	MCDRV_AE_INFO *pae;
-	SINT16 *vp;
-	u16 *cp;
+	int ret = 0;
 	int err;
 
 	memset(&update, 0, sizeof(MCDRV_PATH_INFO));
-	vp = (SINT16 *)((void *)&update + mc1n2_vreg_map[reg].offset);
-	cp = (u16 *)codec->reg_cache + reg;
 
-	*cp = value;
+	ret = cache_write(codec, reg, value);
+	if (ret != 0) {
+		dev_err(codec->dev, "Cache write to %x failed: %d\n",reg, ret);
+	}
 
 	switch (reg) {
 	case MC1N2_ADCL_MIC1_SW:
@@ -1338,8 +1430,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_ADCL_LINE_SW:
 	case MC1N2_ADCL_LINE_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_ADCL_LINE_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_ADCL_LINE_SW]) {
+		if (REG_CACHE_READ(MC1N2_ADCL_LINE_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_ADCL_LINE_SW)) {
 				update.asAdc0[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_L_ON;
 			}
 			else {
@@ -1347,7 +1439,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_ADCL_LINE_SW]) {
+			if (REG_CACHE_READ(MC1N2_ADCL_LINE_SW)) {
 				update.asAdc0[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_M_ON;
 			}
 			else {
@@ -1381,8 +1473,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_ADCR_LINE_SW:
 	case MC1N2_ADCR_LINE_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_ADCR_LINE_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_ADCR_LINE_SW]) {
+		if (REG_CACHE_READ(MC1N2_ADCR_LINE_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_ADCR_LINE_SW)) {
 				update.asAdc0[1].abSrcOnOff[1] = MCDRV_SRC1_LINE1_R_ON;
 			}
 			else {
@@ -1390,7 +1482,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_ADCR_LINE_SW]) {
+			if (REG_CACHE_READ(MC1N2_ADCR_LINE_SW)) {
 				update.asAdc0[1].abSrcOnOff[1] = MCDRV_SRC1_LINE1_M_ON;
 			}
 			else {
@@ -1424,8 +1516,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_HPL_LINE_SW:
 	case MC1N2_HPL_LINE_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_HPL_LINE_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_HPL_LINE_SW]) {
+		if (REG_CACHE_READ(MC1N2_HPL_LINE_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_HPL_LINE_SW)) {
 				update.asHpOut[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_L_ON;
 			}
 			else {
@@ -1433,7 +1525,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_HPL_LINE_SW]) {
+			if (REG_CACHE_READ(MC1N2_HPL_LINE_SW)) {
 				update.asHpOut[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_M_ON;
 			}
 			else {
@@ -1443,8 +1535,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_HPL_DAC_SW:
 	case MC1N2_HPL_DAC_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_HPL_DAC_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_HPL_DAC_SW]) {
+		if (REG_CACHE_READ(MC1N2_HPL_DAC_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_HPL_DAC_SW)) {
 				update.asHpOut[0].abSrcOnOff[5] = MCDRV_SRC5_DAC_L_ON;
 			}
 			else {
@@ -1452,7 +1544,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_HPL_DAC_SW]) {
+			if (REG_CACHE_READ(MC1N2_HPL_DAC_SW)) {
 				update.asHpOut[0].abSrcOnOff[5] = MCDRV_SRC5_DAC_M_ON;
 			}
 			else {
@@ -1502,8 +1594,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_SPL_LINE_SW:
 	case MC1N2_SPL_LINE_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_SPL_LINE_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPL_LINE_SW]) {
+		if (REG_CACHE_READ(MC1N2_SPL_LINE_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_SPL_LINE_SW)) {
 				update.asSpOut[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_L_ON;
 			}
 			else {
@@ -1511,7 +1603,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPL_LINE_SW]) {
+			if (REG_CACHE_READ(MC1N2_SPL_LINE_SW)) {
 				update.asSpOut[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_M_ON;
 			}
 			else {
@@ -1521,8 +1613,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_SPL_DAC_SW:
 	case MC1N2_SPL_DAC_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_SPL_DAC_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPL_DAC_SW]) {
+		if (REG_CACHE_READ(MC1N2_SPL_DAC_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_SPL_DAC_SW)) {
 				update.asSpOut[0].abSrcOnOff[5] = MCDRV_SRC5_DAC_L_ON;
 			}
 			else {
@@ -1530,7 +1622,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPL_DAC_SW]) {
+			if (REG_CACHE_READ(MC1N2_SPL_DAC_SW)) {
 				update.asSpOut[0].abSrcOnOff[5] = MCDRV_SRC5_DAC_M_ON;
 			}
 			else {
@@ -1540,8 +1632,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_SPR_LINE_SW:
 	case MC1N2_SPR_LINE_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_SPR_LINE_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPR_LINE_SW]) {
+		if (REG_CACHE_READ(MC1N2_SPR_LINE_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_SPR_LINE_SW)) {
 				update.asSpOut[1].abSrcOnOff[1] = MCDRV_SRC1_LINE1_R_ON;
 			}
 			else {
@@ -1549,7 +1641,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPR_LINE_SW]) {
+			if (REG_CACHE_READ(MC1N2_SPR_LINE_SW)) {
 				update.asSpOut[1].abSrcOnOff[1] = MCDRV_SRC1_LINE1_M_ON;
 			}
 			else {
@@ -1559,8 +1651,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_SPR_DAC_SW:
 	case MC1N2_SPR_DAC_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_SPR_DAC_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPR_DAC_SW]) {
+		if (REG_CACHE_READ(MC1N2_SPR_DAC_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_SPR_DAC_SW)) {
 				update.asSpOut[1].abSrcOnOff[5] = MCDRV_SRC5_DAC_R_ON;
 			}
 			else {
@@ -1568,7 +1660,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_SPR_DAC_SW]) {
+			if (REG_CACHE_READ(MC1N2_SPR_DAC_SW)) {
 				update.asSpOut[1].abSrcOnOff[5] = MCDRV_SRC5_DAC_M_ON;
 			}
 			else {
@@ -1650,8 +1742,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_LOUT1L_LINE_SW:
 	case MC1N2_LOUT1L_LINE_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_LOUT1L_LINE_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_LOUT1L_LINE_SW]) {
+		if (REG_CACHE_READ(MC1N2_LOUT1L_LINE_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_LOUT1L_LINE_SW)) {
 				update.asLout1[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_L_ON;
 			}
 			else {
@@ -1659,7 +1751,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_LOUT1L_LINE_SW]) {
+			if (REG_CACHE_READ(MC1N2_LOUT1L_LINE_SW)) {
 				update.asLout1[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_M_ON;
 			}
 			else {
@@ -1669,8 +1761,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_LOUT1L_DAC_SW:
 	case MC1N2_LOUT1L_DAC_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_LOUT1L_DAC_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_LOUT1L_DAC_SW]) {
+		if (REG_CACHE_READ(MC1N2_LOUT1L_DAC_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_LOUT1L_DAC_SW)) {
 				update.asLout1[0].abSrcOnOff[5] = MCDRV_SRC5_DAC_L_ON;
 			}
 			else {
@@ -1752,8 +1844,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_LOUT2L_LINE_SW:
 	case MC1N2_LOUT2L_LINE_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_LOUT2L_LINE_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_LOUT2L_LINE_SW]) {
+		if (REG_CACHE_READ(MC1N2_LOUT2L_LINE_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_LOUT2L_LINE_SW)) {
 				update.asLout2[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_L_ON;
 			}
 			else {
@@ -1761,7 +1853,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_LOUT2L_LINE_SW]) {
+			if (REG_CACHE_READ(MC1N2_LOUT2L_LINE_SW)) {
 				update.asLout2[0].abSrcOnOff[1] = MCDRV_SRC1_LINE1_M_ON;
 			}
 			else {
@@ -1771,8 +1863,8 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_LOUT2L_DAC_SW:
 	case MC1N2_LOUT2L_DAC_SRC:
-		if (((u16 *)codec->reg_cache)[MC1N2_LOUT2L_DAC_SRC] == 0) {
-			if (((u16 *)codec->reg_cache)[MC1N2_LOUT2L_DAC_SW]) {
+		if (REG_CACHE_READ(MC1N2_LOUT2L_DAC_SRC) == 0) {
+			if (REG_CACHE_READ(MC1N2_LOUT2L_DAC_SW)) {
 				update.asLout2[0].abSrcOnOff[5] = MCDRV_SRC5_DAC_L_ON;
 			}
 			else {
@@ -1780,7 +1872,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 		}
 		else {
-			if (((u16 *)codec->reg_cache)[MC1N2_LOUT2L_DAC_SW]) {
+			if (REG_CACHE_READ(MC1N2_LOUT2L_DAC_SW)) {
 				update.asLout2[0].abSrcOnOff[5] = MCDRV_SRC5_DAC_M_ON;
 			}
 			else {
@@ -1859,12 +1951,12 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		case MC1N2_DSOURCE_ADC: /* ADC */
 			pch->abSrcOnOff[3] =
 				MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_ADC) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_ADC) {
 				pch->abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 				pch->abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
-				if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+				if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 					pch->abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 				}
 				else {
@@ -1875,7 +1967,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		case MC1N2_DSOURCE_DIR0: /* DIR0 */
 			pch->abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR0) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR0) {
 				pch->abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				pch->abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -1888,7 +1980,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		case MC1N2_DSOURCE_DIR1: /* DIR1 */
 			pch->abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR1) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR1) {
 				pch->abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				pch->abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -1901,7 +1993,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		case MC1N2_DSOURCE_DIR2: /* DIR2 */
 			pch->abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR2) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR2) {
 				pch->abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				pch->abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -1916,7 +2008,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			pch->abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 			pch->abSrcOnOff[3] =
 				MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_MIX) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_MIX) {
 				pch->abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
@@ -1927,7 +2019,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_AE_SRC:
 	case MC1N2_ADC_PDM_SEL:
-		switch (((u16 *)codec->reg_cache)[MC1N2_AE_SRC]) {
+		switch (REG_CACHE_READ(MC1N2_AE_SRC)) {
 		case MC1N2_DSOURCE_OFF:
 			update.asAe[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 			update.asAe[0].abSrcOnOff[3] =
@@ -1935,7 +2027,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			update.asAe[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF;
 			break;
 		case MC1N2_DSOURCE_ADC: /* ADC */
-			if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+			if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 				update.asAe[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 			}
 			else {
@@ -1971,14 +2063,14 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		}
 
-		switch (((u16 *)codec->reg_cache)[MC1N2_DACMAIN_SRC]) {
+		switch (REG_CACHE_READ(MC1N2_DACMAIN_SRC)) {
 		case MC1N2_DSOURCE_ADC: /* ADC */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_ADC) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_ADC) {
 				update.asDac[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 				update.asDac[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
-				if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+				if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 					update.asDac[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 				}
 				else {
@@ -1988,7 +2080,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR0: /* DIR0 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR0) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR0) {
 				update.asDac[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDac[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2000,7 +2092,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR1: /* DIR1 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR1) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR1) {
 				update.asDac[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDac[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2012,7 +2104,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR2: /* DIR2 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR2) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR2) {
 				update.asDac[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDac[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2024,7 +2116,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_MIX: /* MIX */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_MIX) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_MIX) {
 				update.asDac[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
@@ -2033,14 +2125,14 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		}
 
-		switch (((u16 *)codec->reg_cache)[MC1N2_DACVOICE_SRC]) {
+		switch (REG_CACHE_READ(MC1N2_DACVOICE_SRC)) {
 		case MC1N2_DSOURCE_ADC: /* ADC */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_ADC) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_ADC) {
 				update.asDac[1].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 				update.asDac[1].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
-				if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+				if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 					update.asDac[1].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 				}
 				else {
@@ -2050,7 +2142,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR0: /* DIR0 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR0) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR0) {
 				update.asDac[1].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDac[1].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2062,7 +2154,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR1: /* DIR1 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR1) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR1) {
 				update.asDac[1].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDac[1].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2074,7 +2166,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR2: /* DIR2 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR2) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR2) {
 				update.asDac[1].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDac[1].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2086,7 +2178,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_MIX: /* MIX */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_MIX) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_MIX) {
 				update.asDac[1].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
@@ -2095,14 +2187,14 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		}
 
-		switch (((u16 *)codec->reg_cache)[MC1N2_DIT0_SRC]) {
+		switch (REG_CACHE_READ(MC1N2_DIT0_SRC)) {
 		case MC1N2_DSOURCE_ADC: /* ADC */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_ADC) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_ADC) {
 				update.asDit0[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 				update.asDit0[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
-				if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+				if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 					update.asDit0[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 				}
 				else {
@@ -2112,7 +2204,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR0: /* DIR0 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR0) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR0) {
 				update.asDit0[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit0[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2124,7 +2216,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR1: /* DIR1 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR1) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR1) {
 				update.asDit0[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit0[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2136,7 +2228,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR2: /* DIR2 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR2) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR2) {
 				update.asDit0[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit0[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2148,7 +2240,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_MIX: /* MIX */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_MIX) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_MIX) {
 				update.asDit0[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
@@ -2157,14 +2249,14 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		}
 
-		switch (((u16 *)codec->reg_cache)[MC1N2_DIT1_SRC]) {
+		switch (REG_CACHE_READ(MC1N2_DIT1_SRC)) {
 		case MC1N2_DSOURCE_ADC: /* ADC */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_ADC) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_ADC) {
 				update.asDit1[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 				update.asDit1[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
-				if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+				if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 					update.asDit1[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 				}
 				else {
@@ -2174,7 +2266,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR0: /* DIR0 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR0) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR0) {
 				update.asDit1[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit1[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2186,7 +2278,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR1: /* DIR1 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR1) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR1) {
 				update.asDit1[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit1[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2198,7 +2290,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR2: /* DIR2 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR2) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR2) {
 				update.asDit1[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit1[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2210,7 +2302,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_MIX: /* MIX */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_MIX) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_MIX) {
 				update.asDit1[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
@@ -2219,14 +2311,14 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			break;
 		}
 
-		switch (((u16 *)codec->reg_cache)[MC1N2_DIT2_SRC]) {
+		switch (REG_CACHE_READ(MC1N2_DIT2_SRC)) {
 		case MC1N2_DSOURCE_ADC: /* ADC */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_ADC) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_ADC) {
 				update.asDit2[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_OFF;
 				update.asDit2[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
-				if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+				if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 					update.asDit2[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 				}
 				else {
@@ -2236,7 +2328,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR0: /* DIR0 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR0) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR0) {
 				update.asDit2[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit2[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2248,7 +2340,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR1: /* DIR1 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR1) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR1) {
 				update.asDit2[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit2[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2260,7 +2352,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_DIR2: /* DIR2 */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_DIR2) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_DIR2) {
 				update.asDit2[0].abSrcOnOff[3] =
 					MCDRV_SRC3_DIR0_OFF | MCDRV_SRC3_DIR1_OFF | MCDRV_SRC3_DIR2_OFF;
 				update.asDit2[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
@@ -2272,7 +2364,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			}
 			break;
 		case MC1N2_DSOURCE_MIX: /* MIX */
-			if (((u16 *)codec->reg_cache)[MC1N2_AE_SRC] == MC1N2_DSOURCE_MIX) {
+			if (REG_CACHE_READ(MC1N2_AE_SRC) == MC1N2_DSOURCE_MIX) {
 				update.asDit2[0].abSrcOnOff[6] = MCDRV_SRC6_MIX_OFF | MCDRV_SRC6_AE_ON;
 			}
 			else {
@@ -2284,7 +2376,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 		break;
 	case MC1N2_DMIX_ADC_SW:
 		if (value) {
-			if (((u16 *)codec->reg_cache)[MC1N2_ADC_PDM_SEL]) {
+			if (REG_CACHE_READ(MC1N2_ADC_PDM_SEL)) {
 				update.asMix[0].abSrcOnOff[4] = MCDRV_SRC4_ADC0_OFF | MCDRV_SRC4_PDM_ON;
 			}
 			else {
@@ -2337,7 +2429,7 @@ static int write_reg_path(struct snd_soc_codec *codec,
 			pae = &sAeInfo_5;
 			break;
 		default:
-			pae = &sAeInfo_1;
+			pae = NULL;
 			break;
 		}
 		err = _McDrv_Ctrl(MCDRV_SET_AUDIOENGINE, pae, 0x1FF);
@@ -2380,7 +2472,6 @@ static int mc1n2_write_reg(struct snd_soc_codec *codec,
 {
 	int err;
 
-	
 	if (reg < MC1N2_N_VOL_REG) {
 		err = write_reg_vol(codec, reg, value);
 	}
@@ -2402,61 +2493,79 @@ static int mc1n2_set_codec_status(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
-	struct mc1n2_data *mc1n2 = codec->drvdata;
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
 	SINT16 *vol = (SINT16 *)&mc1n2->vol_store;
 
 	int control_data = ucontrol->value.integer.value[0];
-	int i;
+	int err, i;
 
-	printk(KERN_DEBUG "%s : control_data [%#X]\n", __func__, control_data);
+	dev_info(codec->dev, "%s: Recovery [%d]\n", __func__, control_data);
 
 	switch(control_data)
 	{
-		case CMD_CODEC_EMERGENCY_RECOVERY:
-			// hi99.an
-			// Below message must be printed - this case called in abnormal state only
-			//
-			printk(KERN_DEBUG "\n[mc1n2] cmd_codec_emergency_recovery\n");
+	case CMD_CODEC_EMERGENCY_RECOVERY:
+		mutex_lock(&mc1n2->mutex);
 
-			mutex_lock(&mc1n2->mutex);
+		mc1n2_set_mclk_source(1);
 
-			/* store parameters */
-			for (i = 0; i < MC1N2_N_INFO_STORE; i++) {
-				struct mc1n2_info_store *store = &mc1n2_info_store_tbl[i];
-				if (store->get) {
-					_McDrv_Ctrl(store->get, (void *)mc1n2 + store->offset, 0);
+		/* store parameters */
+		for (i = 0; i < MC1N2_N_INFO_STORE; i++) {
+			struct mc1n2_info_store *store
+						= &mc1n2_info_store_tbl[i];
+			if (store->get) {
+				err = _McDrv_Ctrl(store->get,
+					(void *)mc1n2 + store->offset, 0);
+				if (err != MCDRV_SUCCESS) {
+					dev_err(codec->dev,
+						"%d: Error in MCDRV_GET\n",
+						err);
 				}
 			}
+		}
 
-			_McDrv_Ctrl(MCDRV_TERM, NULL, 0);
+		err = _McDrv_Ctrl(MCDRV_TERM, NULL, 0);
+		if (err != MCDRV_SUCCESS)
+			dev_err(codec->dev, "%d: Error in MCDRV_TERM\n", err);
 
-			/* Suepend MCLK */
-			mc1n2_set_mclk_source(0);
+		err = _McDrv_Ctrl(MCDRV_INIT, &mc1n2->setup.init, 0);
+		if (err != MCDRV_SUCCESS)
+			dev_err(codec->dev, "%d: Error in MCDRV_INIT\n", err);
 
-			/* Resume MCLK */
-			mc1n2_set_mclk_source(1);
+		/* restore parameters */
+		for (i = 0; i < sizeof(MCDRV_VOL_INFO)/sizeof(SINT16);
+								i++, vol++) {
+			*vol |= 0x0001;
+		}
 
-			_McDrv_Ctrl(MCDRV_INIT, &mc1n2->setup.init, 0);
+		for (i = 0; i < MC1N2_N_INFO_STORE; i++) {
+			struct mc1n2_info_store *store =
+						&mc1n2_info_store_tbl[i];
+			if (store->set) {
+				err = _McDrv_Ctrl(store->set,
+					(void *) mc1n2 + store->offset,
+					 store->flags);
 
-			/* restore parameters */
-			for (i = 0; i < sizeof(MCDRV_VOL_INFO)/sizeof(SINT16); i++, vol++) {
-				*vol |= 0x0001;
-			}
-
-			for (i = 0; i < MC1N2_N_INFO_STORE; i++) {
-				struct mc1n2_info_store *store = &mc1n2_info_store_tbl[i];
-				if (store->set) {
-					_McDrv_Ctrl(store->set, (void *)mc1n2 + store->offset, store->flags);
+				if (err != MCDRV_SUCCESS) {
+					dev_err(codec->dev,
+						"%d: Error in MCDRV_Set\n",
+						err);
 				}
 			}
+		}
 
-			mutex_unlock(&mc1n2->mutex);
+		err = mc1n2_update_clock(mc1n2);
+		if (err != MCDRV_SUCCESS) {
+			dev_err(codec->dev,
+				"%d: Error in mc1n2_update_clock\n", err);
+		}
 
-			printk(KERN_DEBUG "[mc1n2] cmd_codec_emergency_recovery done...\n");
-			break;
+		mutex_unlock(&mc1n2->mutex);
 
-		default :
-			break;
+		dev_info(codec->dev, "%s: Recovery Done\n", __func__);
+		break;
+
+	default:
+		break;
 	}
 
 	return 0;
@@ -2484,11 +2593,11 @@ static unsigned int mc1n2_tlv_hpgain[] = {
 };
 
 static const char *codec_status_control[] = {
-	"REC_OFF", "REC_ON", "RESET_ON", "RESET_OFF"
+        "REC_OFF", "REC_ON", "RESET_ON", "RESET_OFF"
 };
 
 static const struct soc_enum path_control_enum[] = {
-	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(codec_status_control), codec_status_control),
+        SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(codec_status_control), codec_status_control),
 };
 
 static const struct snd_kcontrol_new mc1n2_snd_controls[] = {
@@ -2659,10 +2768,17 @@ static int mc1n2_add_controls(struct snd_soc_codec *codec,
 	int err, i;
 
 	for (i = 0; i < n; i++, controls++) {
+#ifdef ALSA_VER_ANDROID_3_0
+		if ((err = snd_ctl_add((struct snd_card *)codec->card->snd_card,
+					snd_soc_cnew(controls, codec, NULL, NULL))) < 0) {
+			return err;
+		}
+#else
 		if ((err = snd_ctl_add(codec->card,
 				       snd_soc_cnew(controls, codec, NULL))) < 0) {
 			return err;
 		}
+#endif
 	}
 
 	return 0;
@@ -3144,6 +3260,30 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"MIC3", NULL, "MB3"},
 };
 
+#ifdef ALSA_VER_ANDROID_3_0
+static int mc1n2_add_widgets(struct snd_soc_codec *codec)
+{
+	int err;
+
+	err = snd_soc_dapm_new_controls(&codec->dapm, mc1n2_widgets,
+				  ARRAY_SIZE(mc1n2_widgets));
+	if(err < 0) {
+		return err;
+	}
+
+	err = snd_soc_dapm_add_routes(&codec->dapm, intercon, ARRAY_SIZE(intercon));
+	if(err < 0) {
+		return err;
+	}
+
+	err = snd_soc_dapm_new_widgets(&codec->dapm);
+	if(err < 0) {
+		return err;
+	}
+
+	return 0;
+}
+#else
 static int mc1n2_add_widgets(struct snd_soc_codec *codec)
 {
 	int err;
@@ -3164,9 +3304,9 @@ static int mc1n2_add_widgets(struct snd_soc_codec *codec)
 		return err;
 	}
 
-	
 	return 0;
 }
+#endif
 
 /*
  * Hwdep interface
@@ -3203,7 +3343,11 @@ static int mc1n2_hwdep_map_error(int err)
 static int mc1n2_hwdep_ioctl_set_path(struct snd_soc_codec *codec,
 				      void *info, unsigned int update)
 {
-	struct mc1n2_data *mc1n2 = codec->drvdata;
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
 	MCDRV_CHANNEL *ch;
 	int i, j;
 	MCDRV_PATH_INFO *path = (MCDRV_PATH_INFO *) info;
@@ -3222,7 +3366,6 @@ static int mc1n2_hwdep_ioctl_set_path(struct snd_soc_codec *codec,
 			mc1n2->port[0].dir[i] = 0;
 			break;
 		}
-
 #endif
 #ifdef DIO1_DAI_ENABLE
 		switch ((ch->abSrcOnOff[3] >> 2) & 0x3) {
@@ -3326,9 +3469,7 @@ static int mc1n2_hwdep_ioctl_set_path(struct snd_soc_codec *codec,
 		audio_ctrl_mic_bias_gpio(mc1n2->pdata, MAIN_MIC, 0);
 	} else {
 		audio_ctrl_mic_bias_gpio(mc1n2->pdata, MAIN_MIC, 1);
-		if (isVoiceSearch) {
-			msleep(100);
-		}
+		mdelay(mc1n2->delay_mic1in);
 	}
 
 	if ((path->asAdc0[0].abSrcOnOff[0] & MCDRV_SRC0_MIC3_OFF) && (path->asAdc0[1].abSrcOnOff[0] & MCDRV_SRC0_MIC3_OFF)) {
@@ -3344,7 +3485,11 @@ static int mc1n2_hwdep_ioctl_set_path(struct snd_soc_codec *codec,
 static int mc1n2_hwdep_ioctl_set_ae(struct snd_soc_codec *codec,
 				    void *info, unsigned int update)
 {
-	struct mc1n2_data *mc1n2 = codec->drvdata;
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
 	UINT8 onoff = ((MCDRV_AE_INFO *)info)->bOnOff;
 	unsigned int mask = update & 0x0f;      /* bit mask for bOnOff */
 	int i;
@@ -3381,7 +3526,6 @@ static int mc1n2_hwdep_ioctl_set_ae(struct snd_soc_codec *codec,
 
 	mutex_unlock(&mc1n2->mutex);
 
-	
 	return 0;
 }
 
@@ -3454,8 +3598,6 @@ static int mc1n2_hwdep_ioctl_get_ctrl(struct snd_soc_codec *codec,
 	}
 
 	err = _McDrv_Ctrl(args->dCmd, info, args->dPrm);
-
-
 	err = mc1n2_hwdep_map_error(err);
 	if (err < 0) {
 		goto error;
@@ -3515,12 +3657,10 @@ static int mc1n2_hwdep_ioctl_set_ctrl(struct snd_soc_codec *codec,
 #endif
 	}
 
-
 	err = _McDrv_Ctrl(args->dCmd, info, args->dPrm);
 
 	kfree(info);
 
-	
 	return mc1n2_hwdep_map_error(err);
 }
 
@@ -3543,8 +3683,6 @@ static int mc1n2_hwdep_ioctl_read_reg(struct mc1n2_ctrl_args *args)
 	}
 
 	err = _McDrv_Ctrl(args->dCmd, &info, args->dPrm);
-
-	
 	if (err != MCDRV_SUCCESS) {
 		return mc1n2_hwdep_map_error(err);
 	}
@@ -3560,30 +3698,20 @@ static int mc1n2_hwdep_ioctl_notify(struct snd_soc_codec *codec,
 				      struct mc1n2_ctrl_args *args)
 {
 	MCDRV_PATH_INFO path;
-	struct mc1n2_data *mc1n2 = codec->drvdata;
 
-	mutex_lock(&mc1n2->mutex);
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
 
 	switch (args->dCmd) {
 	case MCDRV_NOTIFY_CALL_START:
 	case MCDRV_NOTIFY_2MIC_CALL_START:
-#ifdef CONFIG_SND_SOC_MIC_A1026
-		if(1) {
-			gpio_set_value(GPIO_2MIC_EN, 0);
-		} else {
-			gpio_set_value(GPIO_2MIC_EN, 1);
-			a1026Wakeup();
-			a1026SetFeature(BYPASSMODE);
-		}
-#endif
 		mc1n2_current_mode |= MC1N2_MODE_CALL_ON;
 		mc1n2->pdata->set_adc_power_contraints(0);
 		break;
 	case MCDRV_NOTIFY_CALL_STOP:
-#ifdef CONFIG_SND_SOC_MIC_A1026
-		gpio_set_value(GPIO_2MIC_EN, 0);
-		a1026Sleep();
-#endif
 		mc1n2_current_mode &= ~MC1N2_MODE_CALL_ON;
 		mc1n2->pdata->set_adc_power_contraints(1);
 		break;
@@ -3602,10 +3730,10 @@ static int mc1n2_hwdep_ioctl_notify(struct snd_soc_codec *codec,
 	case MCDRV_NOTIFY_BT_SCO_DISABLE:
 		break;
 	case MCDRV_NOTIFY_VOICE_REC_START:
-		isVoiceSearch = 1;
+		mc1n2->delay_mic1in = MC1N2_WAITTIME_MICIN;
 		break;
 	case MCDRV_NOTIFY_VOICE_REC_STOP:
-		isVoiceSearch = 0;
+		mc1n2->delay_mic1in = 0;
 		break;
 	case MCDRV_NOTIFY_HDMI_START:
 		if (mc1n2->hdmicount == 0) {
@@ -3639,11 +3767,74 @@ static int mc1n2_hwdep_ioctl_notify(struct snd_soc_codec *codec,
 			(mc1n2->hdmicount)--;
 		}
 		break;
+	case MCDRV_NOTIFY_RECOVER:
+		{
+			int err, i;
+			SINT16 *vol = (SINT16 *)&mc1n2->vol_store;
+
+			mutex_lock(&mc1n2->mutex);
+
+			/* store parameters */
+			for (i = 0; i < MC1N2_N_INFO_STORE; i++) {
+				struct mc1n2_info_store *store = &mc1n2_info_store_tbl[i];
+				if (store->get) {
+					err = _McDrv_Ctrl(store->get, (void *)mc1n2 + store->offset, 0);
+					if (err != MCDRV_SUCCESS) {
+						dev_err(codec->dev,
+							"%d: Error in MCDRV_GET_xxx\n", err);
+						err = -EIO;
+						goto error_recover;
+					} else {
+						err = 0;
+					}
+				}
+			}
+
+			err = _McDrv_Ctrl(MCDRV_TERM, NULL, 0);
+			if (err != MCDRV_SUCCESS) {
+				dev_err(codec->dev, "%d: Error in MCDRV_TERM\n", err);
+				err = -EIO;
+			} else {
+				err = 0;
+			}
+
+			err = _McDrv_Ctrl(MCDRV_INIT, &mc1n2->setup.init, 0);
+			if (err != MCDRV_SUCCESS) {
+				dev_err(codec->dev, "%d: Error in MCDRV_INIT\n", err);
+				err = -EIO;
+				goto error_recover;
+			} else {
+				err = 0;
+			}
+
+			/* restore parameters */
+			for (i = 0; i < sizeof(MCDRV_VOL_INFO)/sizeof(SINT16); i++, vol++) {
+				*vol |= 0x0001;
+			}
+
+			for (i = 0; i < MC1N2_N_INFO_STORE; i++) {
+				struct mc1n2_info_store *store = &mc1n2_info_store_tbl[i];
+				if (store->set) {
+					err = _McDrv_Ctrl(store->set, (void *)mc1n2 + store->offset,
+							  store->flags);
+					if (err != MCDRV_SUCCESS) {
+						dev_err(codec->dev,
+							"%d: Error in MCDRV_SET_xxx\n", err);
+						err = -EIO;
+						goto error_recover;
+					} else {
+						err = 0;
+					}
+				}
+			}
+
+error_recover:
+			mutex_unlock(&mc1n2->mutex);
+			return err;
+			break;
+		}
 	}
 
-	mutex_unlock(&mc1n2->mutex);
-
-	
 	return 0;
 }
 
@@ -3692,10 +3883,19 @@ static int mc1n2_hwdep_ioctl(struct snd_hwdep *hw, struct file *file,
 static int mc1n2_add_hwdep(struct snd_soc_codec *codec)
 {
 	struct snd_hwdep *hw;
-	struct mc1n2_data *mc1n2 = codec->drvdata;
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
 	int err;
 
+#ifdef ALSA_VER_ANDROID_3_0
+	err = snd_hwdep_new((struct snd_card *)codec->card->snd_card,
+						MC1N2_HWDEP_ID, 0, &hw);
+#else
 	err = snd_hwdep_new(codec->card, MC1N2_HWDEP_ID, 0, &hw);
+#endif
 	if (err < 0) {
 		return err;
 	}
@@ -3715,86 +3915,93 @@ static int mc1n2_add_hwdep(struct snd_soc_codec *codec)
 /*
  * Codec device
  */
+#ifdef ALSA_VER_ANDROID_3_0
+static int mc1n2_probe(struct snd_soc_codec *codec)
+#else
 static int mc1n2_probe(struct platform_device *pdev)
+#endif
 {
+#ifdef ALSA_VER_ANDROID_3_0
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+	struct device *dev = codec->dev;
+	struct mc1n2_setup *setup = &mc1n2_cfg_setup;
+#else
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
 	struct snd_soc_codec *codec = mc1n2_get_codec_data();
-	struct mc1n2_data *mc1n2 = codec->drvdata;
+#ifdef ALSA_VER_ANDROID_2_6_35
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
 	struct mc1n2_setup *setup = socdev->codec_data;
+	struct device *dev = socdev->dev;
+#endif
 	int err;
 	UINT32 update = 0;
 
 	TRACE_FUNC();
 
-#ifdef CONFIG_SND_SOC_MIC_A1026
-	if((err = a1026_i2c_drv_init() < 0))
-	{
-		dev_err(socdev->dev, "A1026_driver_init i2c driver failed\n");
-	       return err;
-	}
-
-	a1026_dev_powerup();
-	a1026Sleep();
-#endif
-
 	if (!codec) {
-		dev_err(socdev->dev, "I2C bus is not probed successfully\n");
+		dev_err(dev, "I2C bus is not probed successfully\n");
 		err = -ENODEV;
 		goto error_codec_data;
 	}
+#ifndef ALSA_VER_ANDROID_3_0
 #ifdef ALSA_VER_1_0_19
 	socdev->codec = codec;
 #else
 	socdev->card->codec = codec;
 #endif
+#endif
 
 	/* init hardware */
 	if (!setup) {
-		dev_err(socdev->dev, "No initialization parameters given\n");
+		dev_err(dev, "No initialization parameters given\n");
 		err = -EINVAL;
 		goto error_init_hw;
 	}
 	memcpy(&mc1n2->setup, setup, sizeof(struct mc1n2_setup));
 	err = _McDrv_Ctrl(MCDRV_INIT, &mc1n2->setup.init, 0);
 	if (err != MCDRV_SUCCESS) {
-		dev_err(socdev->dev, "%d: Error in MCDRV_INIT\n", err);
+		dev_err(dev, "%d: Error in MCDRV_INIT\n", err);
 		err = -EIO;
 		goto error_init_hw;
 	}
 
 	/* pcm */
+#ifndef ALSA_VER_ANDROID_3_0
 	err = snd_soc_new_pcms(socdev, SNDRV_DEFAULT_IDX1, SNDRV_DEFAULT_STR1);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in snd_soc_new_pcms\n", err);
+		dev_err(dev, "%d: Error in snd_soc_new_pcms\n", err);
 		goto error_new_pcm;
 	}
+#endif
 
 	/* controls */
 	err = mc1n2_add_controls(codec, mc1n2_snd_controls,
 				 ARRAY_SIZE(mc1n2_snd_controls));
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in mc1n2_add_controls\n", err);
+		dev_err(dev, "%d: Error in mc1n2_add_controls\n", err);
 		goto error_add_ctl;
 	}
 
 	err = mc1n2_add_widgets(codec);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in mc1n2_add_widgets\n", err);
-		printk(KERN_ALERT "mc1n2_add_widgets error\n");
+		dev_err(dev, "%d: Error in mc1n2_add_widgets\n", err);
 		goto error_add_ctl;
 	}
 
 	/* hwdep */
 	err = mc1n2_add_hwdep(codec);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in mc1n2_add_hwdep\n", err);
+		dev_err(dev, "%d: Error in mc1n2_add_hwdep\n", err);
 		goto error_add_hwdep;
 	}
 
 #if (defined ALSA_VER_1_0_19) || (defined ALSA_VER_1_0_21)
 	err = snd_soc_init_card(socdev);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in snd_soc_init_card\n", err);
+		dev_err(dev, "%d: Error in snd_soc_init_card\n", err);
 		goto error_init_card;
 	}
 #endif
@@ -3813,31 +4020,31 @@ static int mc1n2_probe(struct platform_device *pdev)
 
 	err = _McDrv_Ctrl(MCDRV_SET_DIGITALIO, (void *)&stDioInfo_Default, update);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in MCDRV_SET_DIGITALIO\n", err);
+		dev_err(dev, "%d: Error in MCDRV_SET_DIGITALIO\n", err);
 		goto error_set_mode;
 	}
 
 	err = _McDrv_Ctrl(MCDRV_SET_DAC, (void *)&stDacInfo_Default, 0x7);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in MCDRV_SET_DAC\n", err);
+		dev_err(dev, "%d: Error in MCDRV_SET_DAC\n", err);
 		goto error_set_mode;
 	}
 
 	err = _McDrv_Ctrl(MCDRV_SET_ADC, (void *)&stAdcInfo_Default, 0x7);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in MCDRV_SET_ADC\n", err);
+		dev_err(dev, "%d: Error in MCDRV_SET_ADC\n", err);
 		goto error_set_mode;
 	}
 
 	err = _McDrv_Ctrl(MCDRV_SET_SP, (void *)&stSpInfo_Default, 0);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in MCDRV_SET_SP\n", err);
+		dev_err(dev, "%d: Error in MCDRV_SET_SP\n", err);
 		goto error_set_mode;
 	}
 
 	err = _McDrv_Ctrl(MCDRV_SET_DNG, (void *)&stDngInfo_Default, 0x3F3F3F);
 	if (err < 0) {
-		dev_err(socdev->dev, "%d: Error in MCDRV_SET_DNG\n", err);
+		dev_err(dev, "%d: Error in MCDRV_SET_DNG\n", err);
 		goto error_set_mode;
 	}
 
@@ -3845,12 +4052,11 @@ static int mc1n2_probe(struct platform_device *pdev)
 		err = _McDrv_Ctrl(MCDRV_SET_SYSEQ, (void *)&stSyseqInfo_Default, 0x3);
 
 		if (err < 0) {
-			dev_err(socdev->dev, "%d: Error in MCDRV_SET_SYSEQ\n", err);
+			dev_err(dev, "%d: Error in MCDRV_SET_SYSEQ\n", err);
 			goto error_set_mode;
 		}
 	}
 
-	
 	return 0;
 
 error_set_mode:
@@ -3859,19 +4065,40 @@ error_init_card:
 #endif
 error_add_hwdep:
 error_add_ctl:
+#ifndef ALSA_VER_ANDROID_3_0
 	snd_soc_free_pcms(socdev);
 error_new_pcm:
+#endif
 	_McDrv_Ctrl(MCDRV_TERM, NULL, 0);
 error_init_hw:
+#ifndef ALSA_VER_ANDROID_3_0
 #ifdef ALSA_VER_1_0_19
 	socdev->codec = NULL;
 #else
 	socdev->card->codec = NULL;
 #endif
+#endif
 error_codec_data:
 	return err;
 }
 
+#ifdef ALSA_VER_ANDROID_3_0
+static int mc1n2_remove(struct snd_soc_codec *codec)
+{
+	int err;
+
+	TRACE_FUNC();
+
+	if (codec) {
+		err = _McDrv_Ctrl(MCDRV_TERM, NULL, 0);
+		if (err != MCDRV_SUCCESS) {
+			dev_err(codec->dev, "%d: Error in MCDRV_TERM\n", err);
+			return -EIO;
+		}
+	}
+	return 0;
+}
+#else
 static int mc1n2_remove(struct platform_device *pdev)
 {
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
@@ -3893,26 +4120,34 @@ static int mc1n2_remove(struct platform_device *pdev)
 		}
 	}
 
-	
 	return 0;
 }
+#endif
 
+#ifdef ALSA_VER_ANDROID_3_0
+static int mc1n2_suspend(struct snd_soc_codec *codec, pm_message_t state)
+#else
 static int mc1n2_suspend(struct platform_device *pdev, pm_message_t state)
+#endif
 {
+#ifdef ALSA_VER_ANDROID_3_0
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
 #ifdef ALSA_VER_1_0_19
 	struct snd_soc_codec *codec = socdev->codec;
 #else
 	struct snd_soc_codec *codec = socdev->card->codec;
 #endif
-	struct mc1n2_data *mc1n2 = codec->drvdata;
+#ifdef ALSA_VER_ANDROID_2_6_35
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+#endif
 	int err, i;
 
 	TRACE_FUNC();
-
-#ifdef CONFIG_SND_SOC_MIC_A1026
-	a1026Sleep();
-#endif
 
 	mutex_lock(&mc1n2->mutex);
 
@@ -3949,22 +4184,33 @@ static int mc1n2_suspend(struct platform_device *pdev, pm_message_t state)
 	/* Suepend MCLK */
 	mc1n2_set_mclk_source(0);
 
-	
 error:
 	mutex_unlock(&mc1n2->mutex);
 
 	return err;
 }
 
+#ifdef ALSA_VER_ANDROID_3_0
+static int mc1n2_resume(struct snd_soc_codec *codec)
+#else
 static int mc1n2_resume(struct platform_device *pdev)
+#endif
 {
+#ifdef ALSA_VER_ANDROID_3_0
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
 #ifdef ALSA_VER_1_0_19
 	struct snd_soc_codec *codec = socdev->codec;
 #else
 	struct snd_soc_codec *codec = socdev->card->codec;
 #endif
-	struct mc1n2_data *mc1n2 = codec->drvdata;
+#ifdef ALSA_VER_ANDROID_2_6_35
+	struct mc1n2_data *mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	struct mc1n2_data *mc1n2 = codec->private_data;
+#endif
+#endif
 	SINT16 *vol = (SINT16 *)&mc1n2->vol_store;
 	int err, i;
 
@@ -4008,10 +4254,22 @@ static int mc1n2_resume(struct platform_device *pdev)
 error:
 	mutex_unlock(&mc1n2->mutex);
 
-	
 	return err;
 }
 
+#ifdef ALSA_VER_ANDROID_3_0
+struct snd_soc_codec_driver soc_codec_dev_mc1n2 = {
+	.probe = mc1n2_probe,
+	.remove = mc1n2_remove,
+	.suspend = mc1n2_suspend,
+	.resume = mc1n2_resume,
+	.read = mc1n2_read_reg,
+	.write = mc1n2_write_reg,
+	.reg_cache_size = MC1N2_N_REG,
+	.reg_word_size = sizeof(u16),
+	.reg_cache_step = 1
+};
+#else
 struct snd_soc_codec_device soc_codec_dev_mc1n2 = {
 	.probe = mc1n2_probe,
 	.remove = mc1n2_remove,
@@ -4019,6 +4277,7 @@ struct snd_soc_codec_device soc_codec_dev_mc1n2 = {
 	.resume = mc1n2_resume
 };
 EXPORT_SYMBOL_GPL(soc_codec_dev_mc1n2);
+#endif
 
 /*
  * I2C client
@@ -4027,7 +4286,6 @@ static int mc1n2_i2c_detect(struct i2c_client *client, struct i2c_board_info *in
 {
 	UINT8	bHwid = mc1n2_i2c_read_byte(client, 8);
 
-	
 	if (bHwid != MC1N2_HW_ID_AB && bHwid != MC1N2_HW_ID_AA) {
 		return -ENODEV;
 	}
@@ -4041,9 +4299,7 @@ static int mc1n2_i2c_probe(struct i2c_client *client,
 {
 	struct snd_soc_codec *codec;
 	struct mc1n2_data *mc1n2;
-	struct mc1n2_platform_data *pdata;
-	int err = 0;
-	int i;
+	int err;
 
 	TRACE_FUNC();
 
@@ -4053,7 +4309,7 @@ static int mc1n2_i2c_probe(struct i2c_client *client,
 		goto err_alloc_codec;
 	}
 	codec->name = MC1N2_NAME;
-	codec->owner = THIS_MODULE;
+//	codec->owner = THIS_MODULE;
 	mutex_init(&codec->mutex);
 	codec->dev = &client->dev;
 
@@ -4062,28 +4318,30 @@ static int mc1n2_i2c_probe(struct i2c_client *client,
 		goto err_alloc_data;
 	}
 	mutex_init(&mc1n2->mutex);
+#if (defined ALSA_VER_ANDROID_2_6_35) || (defined ALSA_VER_ANDROID_3_0)
+	snd_soc_codec_set_drvdata(codec, mc1n2);
+#else
+	codec->private_data = mc1n2;
+#endif
 
 	mc1n2->hdmicount = 0;
 
-	codec->drvdata = mc1n2;
-
-	pdata = client->dev.platform_data;
-
-	if (!pdata) {
-		dev_err(&client->dev, "failed to initialize YMU823\n");
-		goto err_bad_pdata;
-	}
-
-	mc1n2->pdata = pdata;
+	mc1n2->pdata = client->dev.platform_data;
 
 	/* setup i2c client data */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		err = -ENODEV;
 		goto err_i2c;
 	}
+
 	if ((err = mc1n2_i2c_detect(client, NULL)) < 0) {
 		goto err_i2c;
 	}
+
+
+#ifdef ALSA_VER_ANDROID_3_0
+	i2c_set_clientdata(client, mc1n2);
+#else
 	i2c_set_clientdata(client, codec);
 
 	codec->control_data = client;
@@ -4103,7 +4361,16 @@ static int mc1n2_i2c_probe(struct i2c_client *client,
 	codec->dai = mc1n2_dai;
 	codec->num_dai = ARRAY_SIZE(mc1n2_dai);
 	mc1n2_set_codec_data(codec);
+#endif
 
+#ifdef ALSA_VER_ANDROID_3_0
+	if ((err = snd_soc_register_codec(&client->dev, &soc_codec_dev_mc1n2,
+									  mc1n2_dai, ARRAY_SIZE(mc1n2_dai))) < 0) {
+		goto err_reg_codec;
+	}
+
+	mc1n2_i2c = client;
+#else
 	if ((err = snd_soc_register_codec(codec)) < 0) {
 		goto err_reg_codec;
 	}
@@ -4115,20 +4382,23 @@ static int mc1n2_i2c_probe(struct i2c_client *client,
         if ((err = snd_soc_register_dais(mc1n2_dai, ARRAY_SIZE(mc1n2_dai))) < 0) {
 		goto err_reg_dai;
 	}
+#endif
 
-	
 	return 0;
 
+#ifndef ALSA_VER_ANDROID_3_0
 err_reg_dai:
 	snd_soc_unregister_codec(codec);
+#endif
 err_reg_codec:
+#ifndef ALSA_VER_ANDROID_3_0
 	kfree(codec->reg_cache);
 err_alloc_cache:
+#endif
 	i2c_set_clientdata(client, NULL);
 err_i2c:
 	kfree(mc1n2);
 err_alloc_data:
-err_bad_pdata:
 	kfree(codec);
 err_alloc_codec:
 	dev_err(&client->dev, "err=%d: failed to probe MC-1N2\n", err);
@@ -4137,13 +4407,24 @@ err_alloc_codec:
 
 static int mc1n2_i2c_remove(struct i2c_client *client)
 {
+#ifndef ALSA_VER_ANDROID_3_0
 	struct snd_soc_codec *codec = i2c_get_clientdata(client);
+#endif
 	struct mc1n2_data *mc1n2;
 
 	TRACE_FUNC();
 
+#ifdef ALSA_VER_ANDROID_3_0
+	mc1n2 = (struct mc1n2_data*)(i2c_get_clientdata(client));
+	mutex_destroy(&mc1n2->mutex);
+	snd_soc_unregister_codec(&client->dev);
+#else
 	if (codec) {
-		mc1n2 = codec->drvdata;
+#ifdef ALSA_VER_ANDROID_2_6_35
+		mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+		mc1n2 = codec->private_data;
+#endif
 		snd_soc_unregister_dais(mc1n2_dai, ARRAY_SIZE(mc1n2_dai));
 		snd_soc_unregister_codec(codec);
 
@@ -4153,10 +4434,84 @@ static int mc1n2_i2c_remove(struct i2c_client *client)
 		mutex_destroy(&codec->mutex);
 		kfree(codec);
 	}
+#endif
 
-	
 	return 0;
 }
+
+#ifdef CONFIG_TARGET_LOCALE_KOR
+/*
+ * Function to prevent tick-noise when reboot menu selected.
+ * if you have Power-Off sound and same problem, use this function
+ */
+static void mc1n2_i2c_shutdown(struct i2c_client *client)
+{
+#ifndef ALSA_VER_ANDROID_3_0
+	struct snd_soc_codec *codec = i2c_get_clientdata(client);
+#endif
+	struct mc1n2_data *mc1n2;
+	int err, i;
+
+	pr_info("%s\n", __func__);
+
+	TRACE_FUNC();
+
+#ifdef ALSA_VER_ANDROID_3_0
+	mc1n2 = (struct mc1n2_data *)(i2c_get_clientdata(client));
+#else
+#ifdef ALSA_VER_ANDROID_2_6_35
+	mc1n2 = snd_soc_codec_get_drvdata(codec);
+#else
+	mc1n2 = codec->private_data;
+#endif
+#endif
+
+	mutex_lock(&mc1n2->mutex);
+
+	/* store parameters */
+	for (i = 0; i < MC1N2_N_INFO_STORE; i++) {
+		struct mc1n2_info_store *store = &mc1n2_info_store_tbl[i];
+		if (store->get) {
+			err = _McDrv_Ctrl(store->get,
+				(void *)mc1n2 + store->offset, 0);
+			if (err != MCDRV_SUCCESS) {
+				pr_err("%d: Error in mc1n2_suspend\n", err);
+				err = -EIO;
+				goto error;
+			} else {
+				err = 0;
+			}
+		}
+	}
+
+	/* Do not enter suspend mode for voice call */
+	if (mc1n2_current_mode != MC1N2_MODE_IDLE) {
+		err = 0;
+		goto error;
+	}
+
+	err = _McDrv_Ctrl(MCDRV_TERM, NULL, 0);
+	if (err != MCDRV_SUCCESS) {
+		pr_err("%d: Error in MCDRV_TERM\n", err);
+		err = -EIO;
+	} else {
+		err = 0;
+	}
+
+	/* Suepend MCLK */
+	mc1n2_set_mclk_source(0);
+
+	pr_info("%s done\n", __func__);
+
+error:
+	mutex_unlock(&mc1n2->mutex);
+
+	if (err != 0)
+		pr_err("%s: err = %d\n", __func__, err);
+
+	return;
+}
+#endif
 
 static const struct i2c_device_id mc1n2_i2c_id[] = {
 	{MC1N2_NAME, 0},
@@ -4171,6 +4526,9 @@ static struct i2c_driver mc1n2_i2c_driver = {
 	},
 	.probe = mc1n2_i2c_probe,
 	.remove = mc1n2_i2c_remove,
+#ifdef CONFIG_TARGET_LOCALE_KOR
+	.shutdown = mc1n2_i2c_shutdown,
+#endif
 	.id_table = mc1n2_i2c_id,
 };
 

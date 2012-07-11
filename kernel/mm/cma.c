@@ -996,9 +996,10 @@ static void __cma_chunk_free(struct cma_chunk *chunk)
 {
 	rb_erase(&chunk->by_start, &cma_chunks_by_start);
 
-	chunk->reg->alloc->free(chunk);
-	--chunk->reg->users;
 	chunk->reg->free_space += chunk->size;
+	--chunk->reg->users;
+
+	chunk->reg->alloc->free(chunk);
 }
 
 
@@ -1087,12 +1088,14 @@ __cma_alloc(const struct device *dev, const char *type,
 			 (void *)size, (void *)alignment,
 			 dev_name(dev), type ?: "");
 
-	if (!size || alignment & (alignment - 1))
+	if (!size || (alignment & ~alignment))
 		return -EINVAL;
 
-	size = PAGE_ALIGN(size);
 	if (alignment < PAGE_SIZE)
 		alignment = PAGE_SIZE;
+
+	if (!IS_ALIGNED(size, alignment))
+		size = ALIGN(size, alignment);
 
 	mutex_lock(&cma_mutex);
 

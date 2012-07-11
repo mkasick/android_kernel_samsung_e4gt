@@ -29,7 +29,6 @@
 #include "cyasstorage.h"
 #include "cyasusb.h"
 #include "cyasmtp.h"
-#include "cyasch9.h"
 
 #endif
 

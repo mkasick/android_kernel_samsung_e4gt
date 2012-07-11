@@ -58,7 +58,7 @@ cy_as_intr_start(
 	cy_as_device *dev_p,
 	/* If true, enable the DMA interrupt through the INT signal */
 	cy_bool dmaintr
-	) ;
+	);
 
 /* Summary
    Stop the interrupt manager module
@@ -69,7 +69,7 @@ cy_as_intr_start(
 
    Returns
    * CY_AS_ERROR_SUCCESS - the interrupt module was stopped
-   *	sucessfully
+   *	successfully
    * CY_AS_ERROR_NOT_RUNNING - the interrupt module was not
    *	running
 
@@ -81,7 +81,7 @@ cy_as_return_status_t
 cy_as_intr_stop(
 	/* Device bein stopped */
 	cy_as_device *dev_p
-	) ;
+	);
 
 
 /* Summary
@@ -97,7 +97,7 @@ cy_as_intr_stop(
 void cy_as_intr_service_interrupt(
 	/* The USER supplied tag for this device */
 	cy_as_hal_device_tag tag
-	) ;
+	);
 
 #include "cyas_cplus_end.h"
 

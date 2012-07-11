@@ -36,11 +36,7 @@
 #include "../include/linux/westbridge/cyastoria.h"
 
 #define __USE_SYNC_FUNCTION__
-
 #define __FOR_KERNEL_2_6_35__
-//#define __FOR_KERNEL_2_6_32__
-//#define  __DEBUG_BLK_LOW_LEVEL__
-//#define  __DEBUG_BLK_LOW_LEVEL__2
 
 struct request;
 struct task_struct;
@@ -65,9 +61,9 @@ extern void cyasblkdev_queue_resume(struct cyasblkdev_queue *);
 extern void cy_as_acquire_common_lock(void);
 extern void cy_as_release_common_lock(void);
 
-extern cy_as_device_handle cyasdevice_getdevhandle(void) ;
+extern cy_as_device_handle cyasdevice_getdevhandle(void);
 #define MOD_LOGS 1
-//void verbose_rq_flags(int flags);
+void verbose_rq_flags(int flags);
 
 #endif /* _INCLUDED_CYANBLKDEV_QUEUE_H_ */
 

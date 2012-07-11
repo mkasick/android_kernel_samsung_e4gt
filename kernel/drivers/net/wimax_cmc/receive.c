@@ -48,7 +48,7 @@ void process_indicate_packet(struct net_adapter *adapter, u_char *buffer)
 				if (g_cfg->wimax_mode == SDIO_MODE || g_cfg->wimax_mode == DM_MODE
 						|| g_cfg->wimax_mode == USB_MODE
 						|| g_cfg->wimax_mode == USIM_RELAY_MODE) {
-					
+
 					dump_debug("%s: F/W Download Complete and Running ",__func__);
 					dump_debug("Wait for SDIO ready...");
 					msleep(1200);	/* IMPORTANT!! wait for cmc730 can handle mac req packet */
@@ -68,7 +68,7 @@ void process_indicate_packet(struct net_adapter *adapter, u_char *buffer)
 					adapter->download_complete = TRUE;
 					wake_up_interruptible(&adapter->download_event);
 					adapter->pdata->g_cfg->powerup_done = true ;
-                		}
+				}
 			}
 			break;
 		default:
@@ -93,8 +93,10 @@ u_long process_private_cmd(struct net_adapter *adapter, void *buffer)
 		bufp = (u_char *)buffer;
 
 		/* processing for mac_req request */
+		#ifndef PRODUCT_SHIP
 		dump_debug("MAC address = %02x:%02x:%02x:%02x:%02x:%02x",
 				bufp[3], bufp[4], bufp[5], bufp[6], bufp[7], bufp[8]);
+		#endif
 		memcpy(mac_addr, bufp + 3, ETHERNET_ADDRESS_LENGTH);
 
 		/* create ethernet header */
@@ -126,7 +128,7 @@ u_long process_private_cmd(struct net_adapter *adapter, void *buffer)
 		} else if ((cmd->value == HW_PROT_VALUE_LINK_UP)
 					&& (adapter->media_state != MEDIA_CONNECTED)) {
 			dump_debug("LINK_UP_INDICATION");
-			
+
 			s3c_bat_use_wimax(1);
 			/* set values */
 			adapter->media_state = MEDIA_CONNECTED;
@@ -154,7 +156,7 @@ u_long process_private_cmd(struct net_adapter *adapter, void *buffer)
 
 		dump_debug("process_private_cmd: HwCodeIdleNtfy");
 
-		s3c_bat_use_wimax(0);	
+		s3c_bat_use_wimax(0);
 		break;
 	}
 	case HwCodeWakeUpNtfy: {

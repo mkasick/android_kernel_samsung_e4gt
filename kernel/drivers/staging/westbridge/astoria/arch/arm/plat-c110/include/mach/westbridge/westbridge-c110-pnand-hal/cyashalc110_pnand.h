@@ -272,7 +272,7 @@ void cy_as_hal_read_regs_before_standby(cy_as_hal_device_tag tag);
 
  #define DBGPRN(...) printk(__VA_ARGS__)
  #define DBGPRN_FUNC_NAME	
-			//printk("<1> %x:_func: %s\n", current->pid, __func__)
+			/*printk("<1> %x:_func: %s\n", current->pid, __func__) */
 
 #else
  /** NO DEBUG PRINTING **/

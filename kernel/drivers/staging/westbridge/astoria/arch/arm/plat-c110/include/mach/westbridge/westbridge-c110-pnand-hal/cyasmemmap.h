@@ -42,29 +42,22 @@
 #define WB_CYAS_INT	S5PV210_GPG3(5) 
 #endif
 
-#define WB_RESET  		S5PV310_GPY1(3) 
-#define WB_WAKEUP		S5PV310_GPY4(4) 
-#define WB_CLK_EN		S5PV310_GPY2(5) 
+#define WB_RESET  		EXYNOS4_GPY1(3) 
+#define WB_WAKEUP		EXYNOS4_GPY4(4) 
+#define WB_CLK_EN		EXYNOS4_GPY2(5) 
 
-#define WB_CYAS_INT	S5PV310_GPC0(3) 
+#define WB_CYAS_INT	EXYNOS4_GPC0(3)
 
-//#define WB_CYAS_IRQ_INT		IRQ_EINT_GROUP(17, 5)
-//#define WB_CYAS_IRQ_INT		COMBINER_IRQ(17,5)
-#define WB_CYAS_IRQ_INT gpio_to_irq(S5PV310_GPC0(3))
-//#define WB_SDCD_INT	S5PV210_GPG3(2) 
-#define WB_SDCD_INT	S5PV310_GPX3(4) 
+#define WB_CYAS_IRQ_INT gpio_to_irq(EXYNOS4_GPC0(3))
+#define WB_SDCD_INT	EXYNOS4_GPX3(4)
+#define WB_SDCD_IRQ_INT	gpio_to_irq(EXYNOS4_GPX3(4))
 
-//#define WB_SDCD_IRQ_INT	IRQ_EINT_GROUP(17, 2) 
-//#define WB_SDCD_IRQ_INT	COMBINER_IRQ(39,12)
-#define WB_SDCD_IRQ_INT	gpio_to_irq(S5PV310_GPX3(4))
-
-#define WB_AP_T_FLASH_DETECT	S5PV310_GPC0(1)
+#define WB_AP_T_FLASH_DETECT	EXYNOS4_GPC0(1)
 #define S5PC110_PA_SROMC 0xE8000000
 /*
  * Physical address 
  * we use CS For mapping in C110 RAM space 
  */
-//#define CYAS_DEV_BASE_ADDR  (0x90000000)
 #define CYAS_DEV_BASE_ADDR  (S5P_PA_NAND)
 #define CYAS_DEV_MAX_ADDR   (0xFF)
 #define CYAS_DEV_ADDR_RANGE (CYAS_DEV_MAX_ADDR << 1)

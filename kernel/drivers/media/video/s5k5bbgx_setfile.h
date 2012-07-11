@@ -6677,7 +6677,7 @@ static const u32 s5k5bbgx_preview[] =
 	0x0F120001,
 	0x002A013C,	//#REG_TC_GP_EnablePreviewChanged
 	0x0F120001,
-
+	0xffff0096, /* 150ms */
 };
 
 /*===========================================
@@ -6699,6 +6699,7 @@ static const u32 s5k5bbgx_capture[] =
 	0x0F120001,
 	0x002A0140,	//#REG_TC_GP_EnableCaptureChanged
 	0x0F120001,
+	0xffff0096, /* 150ms */
 };
 
 static const u32 s5k5bbgx_mode_check_capture_staus[] =

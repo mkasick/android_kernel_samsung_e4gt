@@ -21,12 +21,10 @@
 
 int mmc_send_io_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 {
-	struct mmc_command cmd;
+	struct mmc_command cmd = {0};
 	int i, err = 0;
 
 	BUG_ON(!host);
-
-	memset(&cmd, 0, sizeof(struct mmc_command));
 
 	cmd.opcode = SD_IO_SEND_OP_COND;
 	cmd.arg = ocr;
@@ -70,7 +68,7 @@ int mmc_send_io_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 static int mmc_io_rw_direct_host(struct mmc_host *host, int write, unsigned fn,
 	unsigned addr, u8 in, u8 *out)
 {
-	struct mmc_command cmd;
+	struct mmc_command cmd = {0};
 	int err;
 
 	BUG_ON(!host);
@@ -79,8 +77,6 @@ static int mmc_io_rw_direct_host(struct mmc_host *host, int write, unsigned fn,
 	/* sanity check */
 	if (addr & ~0x1FFFF)
 		return -EINVAL;
-
-	memset(&cmd, 0, sizeof(struct mmc_command));
 
 	cmd.opcode = SD_IO_RW_DIRECT;
 	cmd.arg = write ? 0x80000000 : 0x00000000;
@@ -125,9 +121,9 @@ int mmc_io_rw_direct(struct mmc_card *card, int write, unsigned fn,
 int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 	unsigned addr, int incr_addr, u8 *buf, unsigned blocks, unsigned blksz)
 {
-	struct mmc_request mrq;
-	struct mmc_command cmd;
-	struct mmc_data data;
+	struct mmc_request mrq = {0};
+	struct mmc_command cmd = {0};
+	struct mmc_data data = {0};
 	struct scatterlist sg;
 
 	BUG_ON(!card);
@@ -139,10 +135,6 @@ int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 	/* sanity check */
 	if (addr & ~0x1FFFF)
 		return -EINVAL;
-
-	memset(&mrq, 0, sizeof(struct mmc_request));
-	memset(&cmd, 0, sizeof(struct mmc_command));
-	memset(&data, 0, sizeof(struct mmc_data));
 
 	mrq.cmd = &cmd;
 	mrq.data = &data;
@@ -210,33 +202,20 @@ int cmc732_sdio_reset(struct mmc_host *host)
 {
 	int ret;
         u8 abort;
-
-        /* SDIO Block read abort */
-
         ret = mmc_io_rw_direct_host(host, 0, 0, SDIO_CCCR_ABORT, 0, &abort);
         if (ret)
                 abort = 0x01;
         else
                 abort |= 0x01;
-
         ret = mmc_io_rw_direct_host(host, 1, 0, SDIO_CCCR_ABORT, abort, NULL);
-
-        /* SDIO Block read abort de-assert */
-
         ret = mmc_io_rw_direct_host(host, 0, 0, SDIO_CCCR_ABORT, 0, &abort);
-
         abort &= 0xFE;
-
         ret = mmc_io_rw_direct_host(host, 1, 0, SDIO_CCCR_ABORT, abort, NULL);
-
-        /* SDIO Simplified Specification V2.0, 4.4 Reset for SDIO */
-
         ret = mmc_io_rw_direct_host(host, 0, 0, SDIO_CCCR_ABORT, 0, &abort);
         if (ret)
                 abort = 0x08;
         else
                 abort |= 0x08;
-
         ret = mmc_io_rw_direct_host(host, 1, 0, SDIO_CCCR_ABORT, abort, NULL);
         return ret;
 }

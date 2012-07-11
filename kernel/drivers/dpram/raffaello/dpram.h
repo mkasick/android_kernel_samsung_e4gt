@@ -257,20 +257,18 @@ typedef struct {
 */
 #define DRIVER_NAME                 "DPRAM"
 #define DRIVER_PROC_ENTRY           "driver/dpram"
-#define DRIVER_MAJOR_NUM            252
+#define DRIVER_MAJOR_NUM            249
 #define DPRAM_DUMP_DEV_MAJOR        250
 
 /*
 ** MULTI PDP DEFINITIONs
 */
 #define APP_DEVNAME                 "multipdp"  /* Device node name for application interface */
-
-#define NUM_PDP_CONTEXT             3           /* number of PDP context */
-
+#define NUM_PDP_CONTEXT             4           /* number of PDP context */
 /* Device types */
 #define DEV_TYPE_NET                0           /* network device for IP data */
 #define DEV_TYPE_SERIAL             1           /* serial device for CSD */
-#define CSD_MAJOR_NUM               251         /* Device major number */
+#define CSD_MAJOR_NUM               248         /* Device major number */
 #define CSD_MINOR_NUM               0           /* Device minor number */
 #define MAX_PDP_CONTEXT             10          /* Maximum number of PDP context */
 #define MAX_PDP_DATA_LEN            1500        /* Maximum PDP data length */
@@ -330,14 +328,14 @@ struct pdp_info {
 #define DL_DEBUG    0x01<<30
 
 #ifdef _DEBUG_LOG // debug printf
-#define LOGE(s, args...)        printk(KERN_ERR "[IDPRAM/Err] <%s:%d> " s, __func__, __LINE__, ##args)    // Error log
-#define LOGA(s, args...)        printk(KERN_ERR "[IDPRAM] <%s:%d> " s, __func__, __LINE__, ##args)        // Alway printed
-#define LOG(s, args...)         printk("[IDPRAM] <%s:%d> " s, __func__, __LINE__, ##args)
-#define LOGL(mask, s, args...)  do{if(mask & __log_level__) printk("[IDPRAM] <%s:%d> " s, __func__, __LINE__, ##args);}while(0)
-#define PRINT_FUNC()            printk(KERN_ERR "[IDPRAM] %s() ...\n", __func__)
+#define LOGE(s, args...)        printk(KERN_ERR "IDPRAM/Err : <%s:%d> " s, __func__, __LINE__, ##args)    // Error log
+#define LOGA(s, args...)        printk(KERN_INFO "IDPRAM : <%s:%d> " s, __func__, __LINE__, ##args)        // Alway printed
+#define LOG(s, args...)         printk(KERN_INFO"IDPRAM : <%s:%d> " s, __func__, __LINE__, ##args)
+#define LOGL(mask, s, args...)  do{if(mask & __log_level__) printk("IDPRAM : <%s:%d> " s, __func__, __LINE__, ##args);}while(0)
+#define PRINT_FUNC()            printk(KERN_INFO "IDPRAM : %s() ...\n", __func__)
 #else
-#define LOGE(s, args...)        printk("[IDPRAM/Err] %s()| " s, __func__, ##args)   // Error log
-#define LOGA(s, args...)        printk("[IDPRAM] %s()| " s, __func__, ##args)       // Alway printf
+#define LOGE(s, args...)        printk("IDPRAM/Err : %s()| " s, __func__, ##args)   // Error log
+#define LOGA(s, args...)        printk("IDPRAM : %s()| " s, __func__, ##args)       // Alway printf
 #define LOG(...)
 #define LOGL(...)
 #define PRINT_FUNC()

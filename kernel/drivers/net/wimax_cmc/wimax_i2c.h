@@ -6,6 +6,16 @@
 #ifndef __WIMAX_I2C_H__
 #define __WIMAX_I2C_H__
 //#define DRIVER_BIT_BANG
+#include <linux/mutex.h>
+#define WIMAX_BOOTIMAGE_PATH	"/system/etc/wimax_boot.bin"
+
+struct boot_image_data {
+	unsigned int   size;
+	unsigned int   address;
+	unsigned int   offset;
+	struct mutex    lock;
+	unsigned char   *data;
+};
 
 /* Write WiMAX boot image to EEPROM */
 int eeprom_write_boot(void);

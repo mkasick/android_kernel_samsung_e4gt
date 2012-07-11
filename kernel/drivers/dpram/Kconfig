@@ -4,10 +4,7 @@
 
 menuconfig SAMSUNG_PHONE_TTY
         tristate "Samsung Phone Interface - TTY"
-        default y
-        ---help---
-          By default, y
-          When in doubt, say N.
+        default n
 
 if SAMSUNG_PHONE_TTY
 

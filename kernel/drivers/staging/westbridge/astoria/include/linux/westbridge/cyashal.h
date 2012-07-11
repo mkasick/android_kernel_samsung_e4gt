@@ -74,7 +74,7 @@
 
 
 
-/***** OMAP3430 PNAND HAL  ****/
+/***** OMAP3430 Kernel HAL  ****/
 #ifdef CONFIG_MACH_OMAP3_WESTBRIDGE_AST_PNAND_HAL
 
  #ifdef CY_HAL_DEFINED
@@ -86,63 +86,11 @@
  * considered is here
  * #include mach/westbridge/westbridge-omap3-pnand-hal/cyashalomap_kernel.h>
 */
- #include "../../../arch/arm/plat-omap/include/mach/westbridge/westbridge-omap3-pnand-hal/cyashalomap_pnand.h"
+ #include "../../../arch/arm/plat-omap/include/mach/westbridge/westbridge-omap3-pnand-hal/cyashalomap_kernel.h"
 
 #endif
 /*****************************/
 
-/***** OMAP3430 CRAM HAL  ****/
-#ifdef CONFIG_MACH_OMAP3_WESTBRIDGE_AST_CRAM_HAL
-
- #ifdef CY_HAL_DEFINED
-  #error only one HAL layer can be defined
- #endif
-
- #define CY_HAL_DEFINED
-/* moved to staging location, eventual implementation
- * considered is here
- * #include mach/westbridge/westbridge-omap3-pnand-hal/cyashalomap_kernel.h>
-*/
- #include "../../../arch/arm/plat-omap/include/mach/westbridge/westbridge-omap3-cram-hal/cyashalomap_cram.h"
-
-#endif
-/*****************************/
-
-/***** QC ADMux HAL  ****/
-#ifdef CONFIG_MACH_QC_WESTBRIDGE_AST_HAL
-
- #ifdef CY_HAL_DEFINED
-  #error only one HAL layer can be defined
- #endif
-
- #define CY_HAL_DEFINED
-/* moved to staging location, eventual implementation
- * considered is here
- * #include mach/westbridge/westbridge-omap3-pnand-hal/cyashalomap_kernel.h>
-*/
- #include "../../../arch/arm/plat-qc/include/mach/westbridge/westbridge-qc-admux-hal/cyashalqc_kernel.h"
-
-#endif
-/*****************************/
-
-/***** C110 CRAM HAL  ****/
-#ifdef CONFIG_MACH_C110_WESTBRIDGE_AST_CRAM_HAL
-
- #ifdef CY_HAL_DEFINED
-  #error only one HAL layer can be defined
- #endif
-
- #define CY_HAL_DEFINED
-/* moved to staging location, eventual implementation
- * considered is here
- * #include mach/westbridge/westbridge-omap3-pnand-hal/cyashalomap_kernel.h>
-*/
- #include "../../../arch/arm/plat-c110/include/mach/westbridge/westbridge-c110-cram-hal/cyashalc110_cram.h"
-
-#endif
-/*****************************/
-
-/***** C110 CRAM HAL  ****/
 #ifdef CONFIG_MACH_C110_WESTBRIDGE_AST_PNAND_HAL
 
  #ifdef CY_HAL_DEFINED
@@ -157,7 +105,6 @@
  #include "../../../arch/arm/plat-c110/include/mach/westbridge/westbridge-c110-pnand-hal/cyashalc110_pnand.h"
 
 #endif
-/*****************************/
 
 
 /******/

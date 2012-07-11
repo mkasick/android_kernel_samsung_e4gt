@@ -14,7 +14,7 @@ struct image_data g_wimax_image;
 int load_wimax_image(int mode)
 {
 	struct file	*fp;
-	int 		read_size = 0;
+	int		read_size = 0;
 
 	if (mode == AUTH_MODE)
 		fp = klib_fopen(WIMAX_LOADER_PATH, O_RDONLY, 0);	/* download mode */
@@ -201,9 +201,9 @@ u_int sd_send(struct net_adapter *adapter, u_char *buffer, u_int len)
 		dump_debug("Halted Already");
 		return STATUS_UNSUCCESSFUL;
 	}
-	
+
 	sdio_claim_host(adapter->func);
-	hwSdioWriteBankIndex(adapter, &nWriteIdx, &nRet); 
+	hwSdioWriteBankIndex(adapter, &nWriteIdx, &nRet);
 
 	if(nRet || (nWriteIdx < 0) )
 		return STATUS_UNSUCCESSFUL;

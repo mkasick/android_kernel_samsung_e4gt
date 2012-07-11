@@ -1,38 +1,38 @@
 // filename: ISSP_Routines.c
 #include "issp_revision.h"
 #ifdef PROJECT_REV_304
-// Copyright 2006-2007, Cypress Semiconductor Corporation.
-//
-//THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
-//CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-//INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-//MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-//DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
-//BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-//CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-//OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
-//BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-//LIABILITY, WHETHER IN CONRTACT, STRICT LIABILITY, OR TORT (INCLUDING
-//NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-//SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Disclaimer: CYPRESS MAKES NO WARRANTY OF ANY KIND,EXPRESS OR IMPLIED,
-// WITH REGARD TO THIS MATERIAL, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-// Cypress reserves the right to make changes without further notice to the
-// materials described herein. Cypress does not assume any liability arising
-// out of the application or use of any product or circuit described herein.
-// Cypress does not authorize its products for use as critical components in
-// life-support systems where a malfunction or failure may reasonably be
-// expected to result in significant injury to the user. The inclusion of
-// Cypressï¿?product in a life-support systems application implies that the
-// manufacturer assumes all risk of such use and in doing so indemnifies
-// Cypress against all charges.
-//
-// Use may be limited by and subject to the applicable Cypress software
-// license agreement.
-//
-//--------------------------------------------------------------------------
+/* Copyright 2006-2007, Cypress Semiconductor Corporation.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONRTACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+ Disclaimer: CYPRESS MAKES NO WARRANTY OF ANY KIND,EXPRESS OR IMPLIED,
+ WITH REGARD TO THIS MATERIAL, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ Cypress reserves the right to make changes without further notice to the
+ materials described herein. Cypress does not assume any liability arising
+ out of the application or use of any product or circuit described herein.
+ Cypress does not authorize its products for use as critical components in
+ life-support systems where a malfunction or failure may reasonably be
+ expected to result in significant injury to the user. The inclusion of
+ Cypressï¿?product in a life-support systems application implies that the
+ manufacturer assumes all risk of such use and in doing so indemnifies
+ Cypress against all charges.
+
+ Use may be limited by and subject to the applicable Cypress software
+ license agreement.
+
+--------------------------------------------------------------------------*/
 #include <linux/module.h>
 
 #include <linux/init.h>
@@ -241,10 +241,8 @@ signed char fDetectHiLoTransition(void)
 	// Generate clocks for the target to pull SDATA High
 	//dog_kick();
 	iTimer = TRANSITION_TIMEOUT;
-#if !defined(CONFIG_TARGET_LOCALE_NAATT)
 	printk(KERN_DEBUG
 	       "Generate clocks for the target to pull SDATA High\n");
-#endif
 	while (1) {
 		SCLKLow();
 		if (fSDATACheck())	// exit once SDATA goes HI
@@ -258,10 +256,8 @@ signed char fDetectHiLoTransition(void)
 	//dog_kick();
 	// Generate Clocks and wait for Target to pull SDATA Low again
 	iTimer = TRANSITION_TIMEOUT;	// reset the timeout counter
-#if !defined(CONFIG_TARGET_LOCALE_NAATT)
 	printk(KERN_DEBUG
 	       "Generate Clocks and wait for Target to pull SDATA Low again\n");
-#endif
 	while (1) {
 		SCLKLow();	//issp_test_20100709 unblock
 		if (!fSDATACheck()) {	// exit once SDATA returns LOW
@@ -273,9 +269,7 @@ signed char fDetectHiLoTransition(void)
 			return (ERROR);
 		}
 	}
-#if !defined(CONFIG_TARGET_LOCALE_NAATT)
-	printk(KERN_ERR"fDetectHiLoTransition OUT!!!!\n");
-#endif
+	printk("fDetectHiLoTransition OUT!!!!\n");
 	return (PASS);
 }
 
@@ -334,11 +328,9 @@ signed char fXRESInitializeTargetForISSP(void)
 //     0 if successful
 //     INIT_ERROR if timed out on handshake to the device.
 // ============================================================================
-signed char fPowerCycleInitializeTargetForISSP(unsigned long flag)
+signed char fPowerCycleInitializeTargetForISSP(void)
 {
-    printk(KERN_ERR"[TOUCHKEY]start fPowerCycleInitializeTargetForISSP\n");
-	 //unsigned char n;
-    int n=0;
+	// unsigned char n;
 
 	// Set all pins to highZ to avoid back powering the PSoC through the GPIO
 	// protection diodes.
@@ -348,22 +340,17 @@ signed char fPowerCycleInitializeTargetForISSP(unsigned long flag)
 	// Turn on power to the target device before other signals
 	SetTargetVDDStrong();
 	ApplyTargetVDD();
-	local_irq_save(flag);
 	// wait 1msec for the power to stabilize
-//#if 0
+#if 0
 	for (n = 0; n < 10; n++) {
 		Delay(DELAY100us);
 	}
-//#endif
+#endif
 	// Set SCLK to high Z so there is no clock and wait for a high to low
 	// transition on SDAT. SCLK is not needed this time.
 	SetSCLKHiZ();
 //    printk(KERN_DEBUG "fDetectHiLoTransition\n");
 	if ((fIsError = fDetectHiLoTransition())) {
-#if defined(CONFIG_TARGET_LOCALE_NAATT)
-		local_irq_restore(flag);
-#endif
-		printk(KERN_ERR"[TOUCHKEY]fDetectHiLoTransition()error!!!\n");
 		return (INIT_ERROR);
 	}
 	// Configure the pins for initialization
@@ -382,10 +369,6 @@ signed char fPowerCycleInitializeTargetForISSP(unsigned long flag)
 //    printk("SendVector(id_setup_1)\n",0,0,0);
 	SendVector(id_setup_1, num_bits_id_setup_1);
 	if ((fIsError = fDetectHiLoTransition())) {
-#if defined(CONFIG_TARGET_LOCALE_NAATT)
-		local_irq_restore(flag);
-#endif
-		printk(KERN_ERR"[TOUCHKEY]fDetectHiLoTransition()error!!!\n");
 		return (INIT_ERROR);
 	}
 	SendVector(wait_and_poll_end, num_bits_wait_and_poll_end);
@@ -405,7 +388,7 @@ signed char fPowerCycleInitializeTargetForISSP(unsigned long flag)
 signed char fVerifySiliconID(void)
 {
 	SendVector(id_setup_2, num_bits_id_setup_2);
-	printk(KERN_ERR"fVerifySiliconID: SendVector id_stup2 END\n");
+	printk("fVerifySiliconID: SendVector id_stup2 END\n");
 
 	if ((fIsError = fDetectHiLoTransition())) {
 		printk("fVerifySiliconID(): fDetectHiLoTransition Error\n");
@@ -414,7 +397,7 @@ signed char fVerifySiliconID(void)
 	SendVector(wait_and_poll_end, num_bits_wait_and_poll_end);
 	SendVector(tsync_enable, num_bits_tsync_enable);
 	printk
-	    (KERN_ERR"fVerifySiliconID: SendVector(wait_and_poll_end) (tsync_enable) END\n");
+	    ("fVerifySiliconID: SendVector(wait_and_poll_end) (tsync_enable) END\n");
 
 	//Send Read ID vector and get Target ID
 	SendVector(read_id_v, 11);	// Read-MSB Vector is the first 11-Bits

@@ -7,7 +7,7 @@
  *
  */
 
-#ifdef CONFIG_KERNEL_DEBUG_SEC
+#ifdef CONFIG_SEC_DEBUG
 
 #include <linux/kernel_sec_common.h>
 #include <asm/cacheflush.h>           // cacheflush
@@ -110,20 +110,20 @@ struct _idpram_buf {
     unsigned char dpram_buf[DPRAM_BUF_SIZE];
     unsigned int  dpram_end_key;
 } g_cdma_dpram_buf = {
-    .dpram_start_key1 = 'RPD@',
-    .dpram_start_key2 = 'AMDC',
+    .dpram_start_key1 = 'R',
+    .dpram_start_key2 = 'A',
     .dpram_buf[0] = 'N',
     .dpram_buf[1] = 'O',
     .dpram_buf[2] = 'N',
     .dpram_buf[3] = 'E',
-    .dpram_end_key='DNE@'
+    .dpram_end_key='D'
 };
 
 void kernel_sec_cdma_dpram_dump(void)
 {
     printk(KERN_EMERG "Backup CDMA dpram to RAM refore upload\n");
-    memcpy(g_cdma_dpram_buf.dpram_buf, idpram_base, DPRAM_BUF_SIZE);
-    printk(KERN_EMERG "buf address (0x%x), dpram (0x%x)\n", g_cdma_dpram_buf.dpram_buf, idpram_base );
+    memcpy(g_cdma_dpram_buf.dpram_buf, (void *)idpram_base, DPRAM_BUF_SIZE);
+    printk(KERN_EMERG "buf address (0x%x), dpram (0x%x)\n", (unsigned int)g_cdma_dpram_buf.dpram_buf,(unsigned int) idpram_base );
 }
 EXPORT_SYMBOL(kernel_sec_cdma_dpram_dump);
 #endif
@@ -284,8 +284,9 @@ EXPORT_SYMBOL(kernel_sec_map_wdog_reg);
 
 void kernel_sec_set_upload_cause(kernel_sec_upload_cause_type uploadType)
 {
-	gkernel_sec_upload_cause=uploadType;
 	unsigned int temp;
+	gkernel_sec_upload_cause=uploadType;
+
 
 	temp = __raw_readl(S5P_INFORM6);
 	temp |= uploadType;                // KERNEL_SEC_UPLOAD_CAUSE_MASK    0x000000FF
@@ -661,6 +662,8 @@ bool kernel_sec_set_debug_level(int level)
 		}
 	}
 EXPORT_SYMBOL(kernel_sec_set_debug_level);
+
+
 
 int kernel_sec_get_debug_level_from_param()
 {

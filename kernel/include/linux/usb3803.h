@@ -21,4 +21,3 @@ struct usb3803_platform_data {
 };
 
 #endif
-

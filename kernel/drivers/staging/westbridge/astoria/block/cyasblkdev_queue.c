@@ -75,8 +75,7 @@ const char *rq_flag_bit_names[] = {
 	"REQ_NR_BITS",		/* stops here */
 };
 
-static int	cyasblkdev_is_running = 0;
-#if 0
+static int	cyasblkdev_is_running;
 void verbose_rq_flags(int flags)
 {
 	int i;
@@ -88,7 +87,7 @@ void verbose_rq_flags(int flags)
 		j = j << 1;
 	}
 }
-#endif
+
 
 /*
  * Prepare a -BLK_DEV  request.  Essentially, this means passing the
@@ -98,10 +97,11 @@ void verbose_rq_flags(int flags)
 static int cyasblkdev_prep_request(
 	struct request_queue *q, struct request *req)
 {
+	struct cyasblkdev_queue *bq = q->queuedata;
 	DBGPRN_FUNC_NAME;
 
 	/* we only like normal block requests.*/
-	if (!blk_fs_request(req)) {
+	if (req->cmd_type != REQ_TYPE_FS && !(req->cmd_flags & REQ_DISCARD)) {
 		#ifndef WESTBRIDGE_NDEBUG
 		cy_as_hal_print_message(KERN_INFO"%s:%x bad request received\n",
 			__func__, current->pid) ;
@@ -110,6 +110,8 @@ static int cyasblkdev_prep_request(
 		blk_dump_rq_flags(req, "cyasblkdev bad request");
 		return BLKPREP_KILL;
 	}
+	if (!bq)
+		return BLKPREP_KILL;
 
 	req->cmd_flags |= REQ_DONTPREP;
 
@@ -159,12 +161,12 @@ static int cyasblkdev_queue_thread(void *d)
 			"%s: for bq->queue is null\n", __func__);
 		#endif
 
-		#if 1 //ndef __USE_SYNC_FUNCTION__
+		#if 1 /* def __USE_SYNC_FUNCTION__ */
 		if (!bq->req) 
 		#endif
 		{
 			/* chk if queue is plugged */
-			if (!blk_queue_plugged(q)) {
+			if (1) {
 #if defined(__FOR_KERNEL_2_6_35__) || defined(__FOR_KERNEL_2_6_32__)
 				bq->req = req = blk_fetch_request(q);
 #else
@@ -192,7 +194,7 @@ static int cyasblkdev_queue_thread(void *d)
 
 		if (!req) {
 			if (bq->flags & CYASBLKDEV_QUEUE_EXIT) {
-				#if 1 //def __DEBUG_BLK_LOW_LEVEL__
+				#ifdef __DEBUG_BLK_LOW_LEVEL__
 				cy_as_hal_print_message(KERN_ERR
 					"%s:got QUEUE_EXIT flag\n", __func__);
 				#endif
@@ -264,7 +266,7 @@ static int cyasblkdev_queue_thread(void *d)
 
 	complete_and_exit(&bq->thread_complete, 0);
 
-	#if 1 //ndef WESTBRIDGE_NDEBUG
+	#ifndef WESTBRIDGE_NDEBUG
 	cy_as_hal_print_message(KERN_ERR"%s: is finished\n", __func__) ;
 	#endif
 
@@ -291,16 +293,14 @@ static void cyasblkdev_request(struct request_queue *q)
 
 
 	if (!bq) {
-		//printk(KERN_ERR "cyasblkdev_request: killing requests for dead queue\n");
+		/* printk(KERN_ERR "cyasblkdev_request: killing requests for dead queue\n"); */
 #if defined(__FOR_KERNEL_2_6_35__) || defined(__FOR_KERNEL_2_6_32__)
-		while( (req = blk_fetch_request(q)) != NULL )
-		{
+		while ((req = blk_fetch_request(q)) != NULL) {
 			req->cmd_flags |= REQ_QUIET;
-			__blk_end_request_all(req,-EIO);
+			__blk_end_request_all(req, -EIO);
 		}
 #else
-		while ((req = elv_next_request(q)) != NULL) 
-		{
+		while ((req = elv_next_request(q)) != NULL) {
 			do {
 				ret = __blk_end_request(req, -EIO, blk_rq_cur_bytes(req));
 			} while (ret);
@@ -322,7 +322,7 @@ static void cyasblkdev_request(struct request_queue *q)
 		cy_as_hal_print_message(KERN_ERR"%s: don't wake Q_thr, bq->req:%x\n",
 			__func__, (uint32_t)bq->req);
 		#endif
-		#if 0 //def __USE_SYNC_FUNCTION__
+		#if 0 /* def __USE_SYNC_FUNCTION__ */
 		if( !cyasblkdev_is_running )
 			wake_up(&bq->thread_wq);
 		#endif
@@ -383,7 +383,7 @@ int cyasblkdev_init_queue(struct cyasblkdev_queue *bq, spinlock_t *lock)
 	
 	init_completion(&bq->thread_complete);
 	init_waitqueue_head(&bq->thread_wq);
-	init_MUTEX(&bq->thread_sem);
+	sema_init(&bq->thread_sem, 1);
 
 	ret = kernel_thread(cyasblkdev_queue_thread, bq, CLONE_KERNEL);
 	if (ret >= 0) {
@@ -422,9 +422,9 @@ void cyasblkdev_cleanup_queue(struct cyasblkdev_queue *bq)
 	blk_start_queue(q);
 	spin_unlock_irqrestore(q->queue_lock, flags);
 	
-
 	cy_as_hal_print_message(KERN_ERR"%s: is finished\n", __func__) ;
-	//blk_cleanup_queue(bq->queue);
+
+	/* blk_cleanup_queue(bq->queue); */
 }
 EXPORT_SYMBOL(cyasblkdev_cleanup_queue);
 

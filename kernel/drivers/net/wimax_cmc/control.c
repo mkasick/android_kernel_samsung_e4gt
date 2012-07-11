@@ -34,22 +34,26 @@ void control_remove(struct net_adapter *adapter)
 			continue;
 		}
 		queue_remove_head(adapter->ctl.q_received.head);
+		if (dsc->buffer)
 			kfree(dsc->buffer);
+		if (dsc)
 			kfree(dsc);
 	}
 
 	/* process list */
 	if (adapter->ctl.apps.ready) {
-		while (!queue_empty(adapter->ctl.apps.process_list)) {
+		if (!queue_empty(adapter->ctl.apps.process_list)) {
 			/* first time gethead needed to get the dsc nodes */
-			process = (struct process_descriptor *)
-				queue_get_head(adapter->ctl.apps.process_list);
+			process = (struct process_descriptor *)queue_get_head(adapter->ctl.apps.process_list);
 			spin_lock_irqsave(&adapter->ctl.apps.lock, flags);
+			while (process != NULL) {
 			if (process->irp) {
 				process->irp = FALSE;
 				wake_up_interruptible(&process->read_wait);
 			}
+				process = (struct process_descriptor *)process->node.next;
 			dump_debug("sangam dbg : waking processes");
+			}
 			spin_unlock_irqrestore(&adapter->ctl.apps.lock, flags);
 			/* delay for the process release */
 			msleep(100);
@@ -258,4 +262,3 @@ void dump_buffer(const char *desc, u_char *buffer, u_int len)
 	}
 	dump_debug(print_buf);
 }
-

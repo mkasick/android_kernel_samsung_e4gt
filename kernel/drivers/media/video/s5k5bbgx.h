@@ -21,7 +21,7 @@ typedef enum {
 	STREAM_STOP,
 	STREAM_START,
 } stream_cmd_t;
-	
+
 struct s5k5bbgx_framesize {
 	u32 width;
 	u32 height;
@@ -38,6 +38,7 @@ struct s5k5bbgx_exif {
  */
 struct s5k5bbgx_state {
 	struct v4l2_subdev sd;
+struct device *s5k5bbgx_dev;
 	/*
 	 * req_fmt is the requested format from the application.
 	 * set_fmt is the output format of the camera. Finally FIMC
@@ -86,8 +87,8 @@ static inline struct s5k5bbgx_state *to_state(struct v4l2_subdev *sd)
 #else
 #define cam_dbg(fmt, ...)
 #endif /* CONFIG_CAM_DEBUG */
-	
-	
+
+
 /************ driver feature ************/
 #define S5K5BBGX_USLEEP
 /* #define CONFIG_LOAD_FILE */
@@ -98,7 +99,7 @@ static inline struct s5k5bbgx_state *to_state(struct v4l2_subdev *sd)
 /* #define S5K5BBGX_10MS_DELAY	0xAA55AA5E */
 #define S5K5BBGX_DELAY		0xFFFF0000
 #define S5K5BBGX_DEF_APEX_DEN	100
-	
+
 /* Register address */
 #define REG_PAGE_SHUTTER    0x7000
 #define REG_ADDR_SHUTTER    0x238C

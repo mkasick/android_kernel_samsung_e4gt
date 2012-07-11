@@ -1389,7 +1389,7 @@ static void binder_transaction(struct binder_proc *proc,
 	wait_queue_head_t *target_wait;
 	struct binder_transaction *in_reply_to = NULL;
 	struct binder_transaction_log_entry *e;
-	uint32_t return_error = BR_ERROR;
+	uint32_t return_error = BR_OK;
 
 	e = binder_transaction_log_add(&binder_transaction_log);
 	e->call_type = reply ? 2 : !!(tr->flags & TF_ONE_WAY);
@@ -2563,11 +2563,13 @@ static int binder_free_thread(struct binder_proc *proc,
 		send_reply = t;
 	while (t) {
 		active_transactions++;
+		#ifndef PRODUCT_SHIP
 		binder_debug(BINDER_DEBUG_DEAD_TRANSACTION,
 			     "binder: release %d:%d transaction %d "
 			     "%s, still active\n", proc->pid, thread->pid,
 			     t->debug_id,
 			     (t->to_thread == thread) ? "in" : "out");
+		#endif
 
 		if (t->to_thread == thread) {
 			t->to_proc = NULL;
@@ -3020,9 +3022,11 @@ static void binder_deferred_release(struct binder_proc *proc)
 		if (t) {
 			t->buffer = NULL;
 			buffer->transaction = NULL;
+			#ifndef PRODUCT_SHIP
 			printk(KERN_ERR "binder: release proc %d, "
 			       "transaction %d, not freed\n",
 			       proc->pid, t->debug_id);
+			#endif
 			/*BUG();*/
 		}
 		binder_free_buf(proc, buffer);

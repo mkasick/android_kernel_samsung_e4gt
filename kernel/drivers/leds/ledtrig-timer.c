@@ -14,18 +14,13 @@
 #define CONFIG_RTC_LEDTRIG_TIMER 1//chief.rtc.ledtrig
 #endif /* CONFIG_TARGET_LOCALE_NA */
 
+
 #include <linux/module.h>
-#include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/list.h>
-#include <linux/spinlock.h>
 #include <linux/device.h>
-#include <linux/sysdev.h>
-#include <linux/timer.h>
 #include <linux/ctype.h>
 #include <linux/leds.h>
-#include <linux/slab.h>
 #include "leds.h"
 
  #ifdef CONFIG_TARGET_LOCALE_NA
@@ -59,6 +54,7 @@ struct timer_trig_data {
 #endif /* CONFIG_TARGET_LOCALE_NA */
 };
 
+
 #ifdef CONFIG_TARGET_LOCALE_NA
 #if (CONFIG_RTC_LEDTRIG_TIMER==1)
 static int led_rtc_set_alarm(struct led_classdev *led_cdev, unsigned long msec)
@@ -66,7 +62,7 @@ static int led_rtc_set_alarm(struct led_classdev *led_cdev, unsigned long msec)
 	struct timer_trig_data *timer_data = led_cdev->trigger_data;
 	ktime_t expire;
 	ktime_t now;
-	
+
 	now = ktime_get_real();
 	expire = ktime_add(now, ns_to_ktime((u64)msec*1000*1000));
 
@@ -93,68 +89,26 @@ extern int msm_pm_request_wakeup(struct hrtimer *timer);
 static enum hrtimer_restart ledtrig_hrtimer_function(struct hrtimer *timer)
 {
 	struct timer_trig_data *timer_data = container_of(timer, struct timer_trig_data, hrtimer);
-	
+
 	/* let led_timer_function do the actual work */
 	mod_timer(&timer_data->timer, jiffies + 1);
 }
 #endif
 #endif /* CONFIG_TARGET_LOCALE_NA */
 
-static void led_timer_function(unsigned long data)
-{
-	struct led_classdev *led_cdev = (struct led_classdev *) data;
-	struct timer_trig_data *timer_data = led_cdev->trigger_data;
-	unsigned long brightness;
-	unsigned long delay;
-
-	if (!timer_data->delay_on || !timer_data->delay_off) {
-		led_set_brightness(led_cdev, LED_OFF);
-		return;
-	}
-
-	brightness = led_get_brightness(led_cdev);
-	if (!brightness) {
-		/* Time to switch the LED on. */
-		brightness = timer_data->brightness_on;
-		delay = timer_data->delay_on;
-	} else {
-		/* Store the current brightness value to be able
-		 * to restore it when the delay_off period is over.
-		 */
-		timer_data->brightness_on = brightness;
-		brightness = LED_OFF;
-		delay = timer_data->delay_off;
-	}
-
-	led_set_brightness(led_cdev, brightness);
-#ifdef CONFIG_TARGET_LOCALE_NA	
-#if (CONFIG_RTC_LEDTRIG_TIMER==1)
-	led_rtc_set_alarm(led_cdev, delay);
-#elif (CONFIG_RTC_LEDTRIG_TIMER==2)
-	hrtimer_start(&timer_data->hrtimer, ns_to_ktime((u64)delay*1000*1000), HRTIMER_MODE_REL);
-#else
-	mod_timer(&timer_data->timer, jiffies + msecs_to_jiffies(delay));
-#endif
-#else
-	mod_timer(&timer_data->timer, jiffies + msecs_to_jiffies(delay));
-#endif /* CONFIG_TARGET_LOCALE_NA */
-
-}
 
 static ssize_t led_delay_on_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
-	struct timer_trig_data *timer_data = led_cdev->trigger_data;
 
-	return sprintf(buf, "%lu\n", timer_data->delay_on);
+	return sprintf(buf, "%lu\n", led_cdev->blink_delay_on);
 }
 
 static ssize_t led_delay_on_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
-	struct timer_trig_data *timer_data = led_cdev->trigger_data;
 	int ret = -EINVAL;
 	char *after;
 	unsigned long state = simple_strtoul(buf, &after, 10);
@@ -164,21 +118,8 @@ static ssize_t led_delay_on_store(struct device *dev,
 		count++;
 
 	if (count == size) {
-		if (timer_data->delay_on != state) {
-			/* the new value differs from the previous */
-			timer_data->delay_on = state;
-
-			/* deactivate previous settings */
-			del_timer_sync(&timer_data->timer);
-
-			/* try to activate hardware acceleration, if any */
-			if (!led_cdev->blink_set ||
-			    led_cdev->blink_set(led_cdev,
-			      &timer_data->delay_on, &timer_data->delay_off)) {
-				/* no hardware acceleration, blink via timer */
-				mod_timer(&timer_data->timer, jiffies + 1);
-			}
-		}
+		led_blink_set(led_cdev, &state, &led_cdev->blink_delay_off);
+		led_cdev->blink_delay_on = state;
 		ret = count;
 	}
 
@@ -189,16 +130,14 @@ static ssize_t led_delay_off_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
-	struct timer_trig_data *timer_data = led_cdev->trigger_data;
 
-	return sprintf(buf, "%lu\n", timer_data->delay_off);
+	return sprintf(buf, "%lu\n", led_cdev->blink_delay_off);
 }
 
 static ssize_t led_delay_off_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
-	struct timer_trig_data *timer_data = led_cdev->trigger_data;
 	int ret = -EINVAL;
 	char *after;
 	unsigned long state = simple_strtoul(buf, &after, 10);
@@ -208,21 +147,8 @@ static ssize_t led_delay_off_store(struct device *dev,
 		count++;
 
 	if (count == size) {
-		if (timer_data->delay_off != state) {
-			/* the new value differs from the previous */
-			timer_data->delay_off = state;
-
-			/* deactivate previous settings */
-			del_timer_sync(&timer_data->timer);
-
-			/* try to activate hardware acceleration, if any */
-			if (!led_cdev->blink_set ||
-			    led_cdev->blink_set(led_cdev,
-			      &timer_data->delay_on, &timer_data->delay_off)) {
-				/* no hardware acceleration, blink via timer */
-				mod_timer(&timer_data->timer, jiffies + 1);
-			}
-		}
+		led_blink_set(led_cdev, &led_cdev->blink_delay_on, &state);
+		led_cdev->blink_delay_off = state;
 		ret = count;
 	}
 
@@ -234,79 +160,37 @@ static DEVICE_ATTR(delay_off, 0644, led_delay_off_show, led_delay_off_store);
 
 static void timer_trig_activate(struct led_classdev *led_cdev)
 {
-	struct timer_trig_data *timer_data;
 	int rc;
 
-	timer_data = kzalloc(sizeof(struct timer_trig_data), GFP_KERNEL);
-	if (!timer_data)
-		return;
+	led_cdev->trigger_data = NULL;
 
-	timer_data->brightness_on = led_get_brightness(led_cdev);
-	if (timer_data->brightness_on == LED_OFF)
-		timer_data->brightness_on = led_cdev->max_brightness;
-	led_cdev->trigger_data = timer_data;
-
-	init_timer(&timer_data->timer);
-	timer_data->timer.function = led_timer_function;
-	timer_data->timer.data = (unsigned long) led_cdev;
-#ifdef CONFIG_TARGET_LOCALE_NA		
-#if (CONFIG_RTC_LEDTRIG_TIMER==1)
-	alarm_init(&timer_data->alarm, ANDROID_ALARM_RTC_WAKEUP,
-			led_rtc_timer_function);
-	wake_lock_init(&timer_data->wakelock, WAKE_LOCK_SUSPEND, "ledtrig_rtc_timer");
-#elif (CONFIG_RTC_LEDTRIG_TIMER==2)
-	hrtimer_init(&timer_data->hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	timer_data->hrtimer.function = ledtrig_hrtimer_function;
-	msm_pm_request_wakeup(&timer_data->hrtimer);
-#endif
-#endif /* CONFIG_TARGET_LOCALE_NA */
 	rc = device_create_file(led_cdev->dev, &dev_attr_delay_on);
 	if (rc)
-		goto err_out;
+		return;
 	rc = device_create_file(led_cdev->dev, &dev_attr_delay_off);
 	if (rc)
 		goto err_out_delayon;
 
-	/* If there is hardware support for blinking, start one
-	 * user friendly blink rate chosen by the driver.
-	 */
-	if (led_cdev->blink_set)
-		led_cdev->blink_set(led_cdev,
-			&timer_data->delay_on, &timer_data->delay_off);
+	led_blink_set(led_cdev, &led_cdev->blink_delay_on,
+		      &led_cdev->blink_delay_off);
+
+	led_cdev->trigger_data = (void *)1;
 
 	return;
 
 err_out_delayon:
 	device_remove_file(led_cdev->dev, &dev_attr_delay_on);
-err_out:
-	led_cdev->trigger_data = NULL;
-	kfree(timer_data);
 }
 
 static void timer_trig_deactivate(struct led_classdev *led_cdev)
 {
-	struct timer_trig_data *timer_data = led_cdev->trigger_data;
-	unsigned long on = 0, off = 0;
-
-	if (timer_data) {
+	if (led_cdev->trigger_data) {
 		device_remove_file(led_cdev->dev, &dev_attr_delay_on);
 		device_remove_file(led_cdev->dev, &dev_attr_delay_off);
-		del_timer_sync(&timer_data->timer);
-#ifdef CONFIG_TARGET_LOCALE_NA		
-#if (CONFIG_RTC_LEDTRIG_TIMER==1)
-		alarm_cancel(&timer_data->alarm);
-		wake_lock_destroy(&timer_data->wakelock);
-#elif (CONFIG_RTC_LEDTRIG_TIMER==2)
-		msm_pm_request_wakeup(NULL);
-		hrtimer_cancel(&timer_data->hrtimer);
-#endif
-#endif /* CONFIG_TARGET_LOCALE_NA */
-		kfree(timer_data);
 	}
 
-	/* If there is hardware support for blinking, stop it */
-	if (led_cdev->blink_set)
-		led_cdev->blink_set(led_cdev, &on, &off);
+	/* Stop blinking */
+	led_brightness_set(led_cdev, LED_OFF);
 }
 
 static struct led_trigger timer_led_trigger = {

@@ -24,17 +24,16 @@
 #include <mach/gpmc.h>
 #include <mach/mux.h>
 */
-#ifdef __FOR_KERNEL_2_6_35__
 #include <linux/../../arch/arm/plat-omap/include/plat/gpmc.h>
 #include <linux/../../arch/arm/plat-omap/include/plat/mux.h>
-#else
-#include <linux/../../arch/arm/plat-omap/include/mach/gpmc.h>
-#include <linux/../../arch/arm/plat-omap/include/mach/mux.h>
-#endif
+
 #ifndef _INCLUDED_CYASMEMMAP_H_
 #define _INCLUDED_CYASMEMMAP_H_
 
 /* defines copied from OMAP kernel branch */
+
+#define OMAP2_PULL_UP		(1 << 4)
+#define OMAP2_PULL_ENA		(1 << 3)
 #define	OMAP34XX_MUX_MODE0	0
 #define	OMAP34XX_MUX_MODE4	4
 #define OMAP3_INPUT_EN		(1 << 8)
@@ -52,7 +51,7 @@
  * 							GPMC_ADDR
  *							[A8:A1]->upD[7:0]
  * INT#	-GPMC_nWP_GPIO_62
- * DACK	-N/C				 not conected
+ * DACK	-N/C				 not connected
  * WAKEUP-GPIO_167
  * RESET-GPIO_126
  * R/B	-GPMC_WAIT2_GPIO_64
@@ -109,7 +108,7 @@
 	 *					will be monitored
 	 * PF_EN_ENGINE - 1- ENABLES ENGINE, but it needs to be started after
 	 *					that C ctrl reg bit 0
-	 * PF_FIFO_THRESHOLD - FIFO threshhold in number of BUS(8 or 16) words
+	 * PF_FIFO_THRESHOLD - FIFO threshold in number of BUS(8 or 16) words
 	 * PF_WEIGHTED_PRIO  - NUM of cycles granted to PFE if RND_ROBIN
 	 *					prioritization is enabled
 	 * PF_ROUND_ROBIN  - if enabled, gives priority to other CS, but
@@ -254,9 +253,9 @@
 /*
  *gpmc nand registers for CS4
  */
-#define GPMC_NAND_CMD		(0x7c + (0x30*AST_GPMC_CS))
-#define GPMC_NAND_ADDR		(0x80 + (0x30*AST_GPMC_CS))
-#define GPMC_NAND_DATA		(0x84 + (0x30*AST_GPMC_CS))
+#define AST_GPMC_NAND_CMD		(0x7c + (0x30*AST_GPMC_CS))
+#define AST_GPMC_NAND_ADDR		(0x80 + (0x30*AST_GPMC_CS))
+#define AST_GPMC_NAND_DATA		(0x84 + (0x30*AST_GPMC_CS))
 
 #define GPMC_STAT_REG		(0x54)
 #define GPMC_ERR_TYPE	   (0x48)
@@ -428,8 +427,8 @@ static user_pad_cfg_t user_pad_cfg[] = {
 				DIR_OUT, 0, DRV_HI, 0, 0},
 		{"AST_RESET", D23_OMAP3430_GPIO_126, 126, NULL,	0,
 				DIR_OUT, 0, DRV_HI, 0, 0},
-		{"AST__rn_b", K8_OMAP3430_GPIO_64, 64, NULL, 0,
-				DIR_INP, 0,	DRV_HI, 0, 0},
+		{"AST__rn_b", K8_GPMC_WAIT2, 64, NULL, 0,
+				DIR_INP, 0,	0, 0, 0},
 		{"AST_INTR", H1_OMAP3430_GPIO_62, 62, NULL, 0,
 				DIR_INP, 0,	DRV_HI, 0, 0},
 		{"AST_CS", T8_OMAP3430_GPMC_n_c_s4, 55, NULL, 0,
@@ -537,8 +536,7 @@ omap_3430_mux_t omap_mux_pin_cfg[] = {
 	{"T8_OMAP3430_GPIO_55",   0x00B6, (OMAP34XX_MUX_MODE4) },
 	{"R25_OMAP3430_GPIO_156", 0x018C, (OMAP34XX_MUX_MODE4) },
 	{"R27_OMAP3430_GPIO_128", 0x0154, (OMAP34XX_MUX_MODE4) },
-	{"K8_OMAP3430_GPIO_64",   0x00d0, (OMAP34XX_MUX_MODE4 |
-				OMAP3_INPUT_EN | OMAP34XX_PIN_INPUT_PULLUP)  },
+	{"K8_OMAP3430_GPIO_64",   0x00d0, (OMAP34XX_MUX_MODE4) },
 	{"K8_GPMC_WAIT2",		  0x00d0, (OMAP34XX_MUX_MODE0) },
 	{"G3_OMAP3430_GPIO_60",   0x00C6, (OMAP34XX_MUX_MODE4 |
 				OMAP3_INPUT_EN)},

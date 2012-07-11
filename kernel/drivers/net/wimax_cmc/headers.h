@@ -114,4 +114,3 @@ void adapter_interrupt(struct sdio_func *func);
 extern struct net_adapter *g_adapter;
 
 #endif	/* _WIMAX_HEADERS_H */
-

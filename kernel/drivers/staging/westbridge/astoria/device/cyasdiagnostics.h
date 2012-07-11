@@ -20,7 +20,6 @@
 ## ===========================
 */
 
-
 #define __CYAS_SYSFS_FOR_DIAGNOSTICS__
 
 typedef enum cy_as_diag_cmd_type {
@@ -39,10 +38,8 @@ typedef enum cy_as_diag_cmd_type {
 	CY_AS_DIAG_SD_READ 		= 12,
 	CY_AS_DIAG_SD_WRITE 	= 13,
 	CY_AS_DIAG_SD_UNMOUNT 	= 14,
-	
 	CY_AS_DIAG_CONNECT_UMS 		= 21,
 	CY_AS_DIAG_DISCONNECT_UMS 	= 22,
-	
 	CY_AS_DIAG_CONNECT_MTP 		= 31,
 	CY_AS_DIAG_DISCONNECT_MTP	= 32,
 

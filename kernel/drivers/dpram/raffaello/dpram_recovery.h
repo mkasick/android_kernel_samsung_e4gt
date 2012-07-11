@@ -4,22 +4,22 @@
 
 
 /* interupt masks */
-#define MASK_CMD_FOTA_IMG_RECEIVE_READY_RESP	     	0x0100
+#define MASK_CMD_FOTA_IMG_RECEIVE_READY_RESP		0x0100
 #define MASK_CMD_FOTA_IMG_SEND_RESP		        0x0200
 #define MASK_CMD_FOTA_SEND_DONE_RESP			0x0300
 #define MASK_CMD_FOTA_UPDATE_START_RESP			0x0400
-#define MASK_CMD_FOTA_UPDATE_STATUS_IND              	0x0500
+#define MASK_CMD_FOTA_UPDATE_STATUS_IND			0x0500
 #define MASK_CMD_FOTA_UPDATE_END_IND                    0x0C00
 
 /* FORMAT */
-#define CMD_FOTA_IMG_RECEIVE_READY_REQ                	0x9100
-#define CMD_FOTA_IMG_SEND_REQ                         	0x9200
-#define CMD_FOTA_SEND_DONE_REQ                        	0x9300
-#define CMD_FOTA_UPDATE_START_REQ                     	0x9400
-#define CMD_FOTA_UPDATE_STATUS_IND                    	0x9500
-#define CMD_FOTA_INIT_START_REQ                       	0x9A00
-#define CMD_FOTA_INIT_START_RES                       	0x9B00
-#define CMD_FOTA_UPDATE_END_IND                       	0x9C00
+#define CMD_FOTA_IMG_RECEIVE_READY_REQ			0x9100
+#define CMD_FOTA_IMG_SEND_REQ				0x9200
+#define CMD_FOTA_SEND_DONE_REQ				0x9300
+#define CMD_FOTA_UPDATE_START_REQ			0x9400
+#define CMD_FOTA_UPDATE_STATUS_IND			0x9500
+#define CMD_FOTA_INIT_START_REQ				0x9A00
+#define CMD_FOTA_INIT_START_RES				0x9B00
+#define CMD_FOTA_UPDATE_END_IND				0x9C00
 
 #define CMD_RETRY	                                0
 #define CMD_TRUE	                                1
@@ -33,8 +33,8 @@
 #define MASK_CMD_IMAGE_SEND_RESPONSE                    0x0500
 
 /* Result mask */
-#define MASK_CMD_RESULT_FAIL                        	0x0002
-#define MASK_CMD_RESULT_SUCCESS                     	0x0001
+#define MASK_CMD_RESULT_FAIL				0x0002
+#define MASK_CMD_RESULT_SUCCESS				0x0001
 
 #define MASK_CMD_VALID					0x8000
 #define MASK_PDA_CMD					0x1000
@@ -130,5 +130,3 @@ struct stat_info {
 #define DPRAM_MODEM_FULL_IMAGE				1
 
 #endif	/* __DPRAM_RECOVERY_H__ */
-
-

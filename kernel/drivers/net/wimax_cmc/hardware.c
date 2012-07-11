@@ -231,7 +231,7 @@ int con0_poll_thread(void *data)
 	struct wimax_cfg *g_cfg = adapter->pdata->g_cfg;
 	int prev_val = 0;
 	int curr_val = 0;
-	
+
 	wake_lock(&g_cfg->wimax_tx_lock);
 
 	while ((!adapter->halted)) {
@@ -269,7 +269,7 @@ void hw_get_mac_address(void *data)
 
 		if (retry == 2) //odb backup takes 5.8sec
 			msleep(6000);
-			
+
 		sdio_claim_host(adapter->func);
 		nResult = sd_send(adapter, (u_char *)&req,
 				sizeof(struct hw_private_packet));
@@ -510,9 +510,10 @@ void hw_transmit_thread(struct work_struct *work)
 	struct net_adapter              *adapter;
 	int				nRet = 0;
 	int				modem_reset = false;
+	struct wimax_cfg *g_cfg;
 
 	adapter = container_of(work, struct net_adapter, transmit_work);
-	struct wimax_cfg *g_cfg = adapter->pdata->g_cfg;
+	g_cfg = adapter->pdata->g_cfg;
 	wake_lock(&g_cfg->wimax_tx_lock);
 
 	if (!gpio_get_value(WIMAX_EN)) {
@@ -542,12 +543,12 @@ void hw_transmit_thread(struct work_struct *work)
 			dump_debug("modem_reset_flag is not set");
 			break;
 		}
-		
+
 		if(hw_device_wakeup(adapter)) {
 			modem_reset = true;
 			break;
 		}
-			
+
 		dsc = (struct buffer_descriptor *)
 			queue_get_head(adapter->hw.q_send.head);
 
@@ -575,13 +576,13 @@ void hw_transmit_thread(struct work_struct *work)
 			dump_debug("SendData Fail******");
 			if (nRet == -ENOMEDIUM || nRet == /*-ETIMEOUT*/-110) {
 				dump_debug("%s: No medium or timeout error", __func__);
-			//	adapter->halted = TRUE;				
+			//	adapter->halted = TRUE;
 			}
 			modem_reset = true;
 			break;
 		}
 	}
-	
+
 	if(modem_reset) {
 		while (!g_cfg->modem_reset_flag) {
 			dump_debug("Waiting for PM_POST_SUSPEND notifier");

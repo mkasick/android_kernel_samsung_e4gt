@@ -57,6 +57,8 @@ static ssize_t mode_show(struct device *dev, struct device_attribute *attr, char
 		return sprintf(buf, "%s", "bypass");
 	else if (current_mode==USB_3803_MODE_STANDBY)
 		return sprintf(buf, "%s", "standby");
+
+	return 0;
 }
 
 static ssize_t mode_store(
@@ -132,7 +134,7 @@ int usb3803_register_write(char reg, char data)
 	buf[1] = data;
 
 	ret = i2c_transfer(this_client->adapter, msg, 1);
-	
+
 	if(ret < 0) pr_err("[%s] reg:0x%x data:0x%x write failed\n", __func__, reg, data);
 
 	return ret;
@@ -160,21 +162,21 @@ int usb3803_register_read(char reg, char *data)
 	ret = i2c_transfer(this_client->adapter, msgs, 2);
 
 	if(ret < 0) pr_err("[%s] 0x%x read failed\n", __func__, reg);
-	
+
 	return ret;
 }
 
 int usb3803_set_mode(int mode)
 {
 	int ret = 0;
-	
+
 	switch(mode) {
 		case USB_3803_MODE_HUB:
 			pdata->reset_n(0);
 			msleep(20);
-				
+
 			/* enable clock */
-			pdata->clock_en(1); 
+			pdata->clock_en(1);
 			/* reset assert */
 			pdata->reset_n(1);
 			/* bypass mode disable */
@@ -201,7 +203,7 @@ int usb3803_set_mode(int mode)
 					ret = -1;
 					break;
 				}
-				
+
 				/* Step 2. Set bit 7 (ClkSusp) of register 0xEE to high. */
 				usb3803_register_read(CFGP_REG, &data);
 				pr_info("[%s] read  CFGP_REG : 0x%x (default)\n", __func__, data);
@@ -238,7 +240,7 @@ int usb3803_set_mode(int mode)
 				current_mode = mode;
 			}
 			break;
-			
+
 		case USB_3803_MODE_BYPASS:
                         /* disable clock */
                         pdata->clock_en(0);
@@ -270,9 +272,9 @@ int usb3803_suspend(struct i2c_client *client, pm_message_t mesg)
 {
 	pdata->reset_n(0);
 	pdata->clock_en(0);
-	
+
 	pr_info("USB3803 suspended\n");
-	
+
 	return 0;
 }
 

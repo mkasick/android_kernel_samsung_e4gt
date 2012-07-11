@@ -27,4 +27,5 @@ int klib_flength (struct file *filp);
 int klib_flen_fcopy (char *buf, int len, struct file *filp);
 int klib_fwrite (char *buf, int len, struct file *filp);
 
+void s3c_bat_use_wimax(int onoff);
 #endif	/* _WIMAX_FIRMWARE_H */

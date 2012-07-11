@@ -1158,8 +1158,8 @@ dpram_recovery_write(struct file *filp, const char __user *buff,
 	return 0;
 }
 
-static int
-dpram_recovery_ioctl(struct inode *inode, struct file *filp,
+static long
+dpram_recovery_ioctl(struct file *filp,
 		unsigned int cmd, unsigned long arg)
 
 {
@@ -1170,74 +1170,60 @@ dpram_recovery_ioctl(struct inode *inode, struct file *filp,
 	printk(MSGDBG "%s" MSGEND, __func__);
 	printk(KERN_ERR "%s\n", __func__);
 
-	dev = container_of(inode->i_cdev, struct dpram_dev, cdev);
+	dev = container_of(filp->f_path.dentry->d_inode->i_cdev, struct dpram_dev, cdev);
 
 	switch (cmd) {
-		case IOCTL_WRITE_MAGIC_CODE:
-			dpram_recovery_dpram_Init();
-			break;
+	case IOCTL_WRITE_MAGIC_CODE:
+		dpram_recovery_dpram_Init();
+		break;
 
-		case IOCTL_ST_FW_UPDATE:
-			printk(KERN_ERR "%s IOCTL_ST_FW_UPDATE\n", __func__);
+	case IOCTL_ST_FW_UPDATE:
+		printk(KERN_ERR "%s IOCTL_ST_FW_UPDATE\n", __func__);
 
-			if (arg == 0) {
-				printk(MSGWARN "Firmware should be written prior to this call" MSGEND);
-			} else {
-				ret_check = copy_from_user((void *)&fw, (void *)arg, sizeof(fw));
-
+		if (arg == 0) {
+			printk(MSGWARN "Firmware should be written prior to this call" MSGEND);
+		} else {
+			ret_check = copy_from_user((void *)&fw, (void *)arg, sizeof(fw));
 				if (ret_check) {
-					printk("[IOCTL_ST_FW_UPDATE]copy from user failed!");
-					return -EFAULT;
-				}
+				printk("[IOCTL_ST_FW_UPDATE]copy from user failed!");
+				return -EFAULT;
+			}
+		}
+
+		/* Dpram Phone off */
+		dpram_recovery_modem_pwroff();
+		if (fw.image_type == DPRAM_MODEM_DELTA_IMAGE) {
+		/* Enter FOTA Update Mode */
+			dpram_recovery_dpram_Init();
+			ret = dpram_recovery_write_modem_firmware(dev, fw.firmware, fw.size);
+			if (ret < 0) {
+				printk("firmware write failed\n");
 			}
 
-			/* Dpram Phone off */
-			dpram_recovery_modem_pwroff();
+		} else {
+			/* Enter Download Mode */
+			dpram_recovery_download_Init();
+			ret = dpram_recovery_write_modem_full_firmware(dev, fw.firmware, fw.size);
+			if (ret < 0) {
+				printk("firmware write failed\n");
+			}
+		}
+		break;
+	case IOCTL_CHK_STAT:
+	{
+		struct stat_info *pst;
 
-			if (fw.image_type == DPRAM_MODEM_DELTA_IMAGE) {
-				/* Enter FOTA Update Mode */
-				dpram_recovery_dpram_Init();
-
-				ret = dpram_recovery_write_modem_firmware(dev, fw.firmware, fw.size);
-
-				if (ret < 0) {
-					printk("firmware write failed\n");
-				}
-
-
+		printk(KERN_ERR "%s IOCTL_CHK_STAT\n", __func__);
+		pst = (struct stat_info *)arg;
+		if (fw.image_type == DPRAM_MODEM_DELTA_IMAGE) {
+			ret = dpram_recovery_check_status(dev, &(pst->pct));
 			} else {
-				/* Enter Download Mode */
-				dpram_recovery_download_Init();
-
-				ret = dpram_recovery_write_modem_full_firmware(dev, fw.firmware, fw.size);
-
-				if (ret < 0) {
-					printk("firmware write failed\n");
-				}
-
+				ret = dpram_recovery_check_status_download(dev, &(pst->pct));
 			}
-
+			}
 			break;
 
-		case IOCTL_CHK_STAT:
-			{
-				struct stat_info *pst;
-
-				printk(KERN_ERR "%s IOCTL_CHK_STAT\n", __func__);
-
-				pst = (struct stat_info *)arg;
-
-				if (fw.image_type == DPRAM_MODEM_DELTA_IMAGE) {
-					ret = dpram_recovery_check_status(dev, &(pst->pct));
-				} else {
-					ret = dpram_recovery_check_status_download(dev, &(pst->pct));
-				}
-
-			}
-
-			break;
-
-		case IOCTL_MOD_PWROFF:
+	case IOCTL_MOD_PWROFF:
 			printk(KERN_ERR "%s IOCTL_MOD_PWROFF\n", __func__);
 
 			msleep(2000); /* Delay for display */
@@ -1248,7 +1234,7 @@ dpram_recovery_ioctl(struct inode *inode, struct file *filp,
 			dpram_recovery_modem_pwroff();
 			break;
 
-		default:
+	default:
 			printk(KERN_ERR "Unknown command");
 			break;
 	}
@@ -1281,7 +1267,7 @@ static struct file_operations dpram_recovery_fops = {
 	.owner = THIS_MODULE,
 	.read = dpram_recovery_read,
 	.write = dpram_recovery_write,
-	.ioctl = dpram_recovery_ioctl,
+	.unlocked_ioctl = dpram_recovery_ioctl,
 	.open = dpram_recovery_open,
 	.release = dpram_recovery_release,
 };
@@ -1354,23 +1340,19 @@ static int register_interrupt_handler(void)
 int dpram_init_hw(void)
 {
 	int rv;
-
 	int phone_active_irq, dpram_wakeup_irq;
 
 	/* 1) Initialize the interrupt pins */
-	set_irq_type(IRQ_DPRAM_AP_INT_N, IRQ_TYPE_LEVEL_LOW);
-
+	irq_set_irq_type(IRQ_DPRAM_AP_INT_N, IRQ_TYPE_LEVEL_LOW);
 	rv = gpio_request(IRQ_QSC_INT, "gpx1_0");
 	if (rv < 0) {
 		printk("IDPRAM: [%s] failed to get gpio GPX1_0\n", __func__);
 		goto err;
 	}
-
 	dpram_wakeup_irq = gpio_to_irq(IRQ_QSC_INT);
-
 	s3c_gpio_cfgpin(GPIO_C210_DPRAM_INT_N, S3C_GPIO_SFN(0xFF));
 	s3c_gpio_setpull(GPIO_C210_DPRAM_INT_N, S3C_GPIO_PULL_NONE);
-	set_irq_type(dpram_wakeup_irq, IRQ_TYPE_EDGE_RISING);
+	irq_set_irq_type(dpram_wakeup_irq, IRQ_TYPE_EDGE_RISING);
 
 	rv = gpio_request(IRQ_QSC_PHONE_ACTIVE, "gpx1_6");
 	if (rv < 0) {
@@ -1382,8 +1364,7 @@ int dpram_init_hw(void)
 
 	s3c_gpio_setpull(GPIO_QSC_PHONE_ACTIVE, S3C_GPIO_PULL_NONE);
 	s3c_gpio_setpull(GPIO_QSC_PHONE_RST, S3C_GPIO_PULL_NONE);
-	set_irq_type(phone_active_irq, IRQ_TYPE_EDGE_FALLING);
-
+	irq_set_irq_type(phone_active_irq, IRQ_TYPE_EDGE_FALLING);
 	/* 4)gpio e3-e4 are for Modem if */
 
 	s3c_gpio_cfgpin(S5PV310_GPE3_0_MDM_DATA_0, S3C_GPIO_SFN(S5PV310_MDM_IF_SEL));

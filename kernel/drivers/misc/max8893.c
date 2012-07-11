@@ -16,6 +16,7 @@
 #include <linux/delay.h>
 #include "max8893.h"
 
+/*#define WIMAX_DEBUG*/
 
 
 static struct i2c_client *max8893_client;
@@ -53,7 +54,7 @@ static int max8893_get_voltage(int ldo)
 
 }
 
-#endif 
+#endif
 
 static int max8893_set_voltage(int ldo, int mv)
 {
@@ -67,7 +68,7 @@ static int max8893_set_voltage(int ldo, int mv)
 	return i2c_smbus_write_byte_data(max8893_client, MAX8893_REG_LDO(ldo), (unsigned char)temp);
 }
 
-int wimax_pmic_set_voltage()
+int wimax_pmic_set_voltage(void)
 {
         int ret;
 #ifdef WIMAX_DEBUG
@@ -84,7 +85,7 @@ int wimax_pmic_set_voltage()
         max8893_set_voltage(LDO5, 2800)
         );
 	if(ret)
-                printk(KERN_ERR "[WiMAX] ERROR SETTING WIMAX PMIC POWER");
+                printk(KERN_ERR "[WiMAX] ERROR SETTING WIMAX PMIC POWER ret = %d\n", ret);
 
 #ifdef WIMAX_DEBUG
         max8893_set_ldo(BUCK, ON);
@@ -107,20 +108,20 @@ static int max8893_wmx_probe(struct i2c_client *client, const struct i2c_device_
 	int ret;
 #ifdef WIMAX_DEBUG
 	int i;
-#endif	
+#endif
 	max8893_client = client;
 #if 0
 	ret = (
 	max8893_set_voltage(BUCK, 1200)|
 	max8893_set_voltage(LDO1, 2800)|
 	max8893_set_voltage(LDO2, 2800)|
-	max8893_set_voltage(LDO3, 3300)|	
+	max8893_set_voltage(LDO3, 3300)|
 	max8893_set_voltage(LDO4, 2900)|
 	max8893_set_voltage(LDO5, 2800)
 	);
 	if(ret)
 		printk(KERN_ERR "[WiMAX] ERROR SETTING WIMAX PMIC POWER");
-	
+
 #ifdef WIMAX_DEBUG
 	max8893_set_ldo(BUCK, ON);
 	max8893_set_ldo(LDO1, ON);
@@ -128,11 +129,11 @@ static int max8893_wmx_probe(struct i2c_client *client, const struct i2c_device_
 	max8893_set_ldo(LDO3, ON);
 	max8893_set_ldo(LDO4, ON);
 	max8893_set_ldo(LDO5, ON);
-	
+
 	for(i=1;i<6;i++){
-		printk("[WIMAX_BEBUG] LDO%d STATE :%d",i,max8893_get_ldo(i)); 	
-		printk("[WIMAX_BEBUG] LDO%d VOLTAGE:%x",i,max8893_get_voltage(i)); 	
-	}	
+		printk("[WIMAX_BEBUG] LDO%d STATE :%d",i,max8893_get_ldo(i));
+		printk("[WIMAX_BEBUG] LDO%d VOLTAGE:%x",i,max8893_get_voltage(i));
+	}
 #endif
 
 	return ret;
@@ -159,10 +160,10 @@ const struct i2c_device_id max8893_wmx_id[]={
 
 MODULE_DEVICE_TABLE(i2c, max8893_wmx_id);
 static struct i2c_driver max8893_wmx_driver = {
-	.probe 		= max8893_wmx_probe,
-	.remove 	= max8893_wmx_remove,
+	.probe		= max8893_wmx_probe,
+	.remove		= max8893_wmx_remove,
 	.id_table	= max8893_wmx_id,
-	.driver = {		
+	.driver = {
 		.name   = "max8893_wmx",
 	},
 };
