@@ -560,6 +560,9 @@ void sec_debug_check_crash_key(unsigned int code, int value)
 {
 	static bool vol_up, vol_down, check;
 
+	if (code == KEY_VOLUMEUP && value)
+		emergency_restart();
+
 	if (!debug_level.en.kernel_fault)
 		return;
 
